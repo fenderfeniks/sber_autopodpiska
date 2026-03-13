@@ -54,5 +54,4 @@ def predict(session_data: SessionData):
     print(f'{time.time() - start_time:.3f}c')
     return {'prediction': int(prediction)}
 
-#"Среднее время ответа API составляет ~28мс, что значительно меньше требуемых 3 секунд."
 
