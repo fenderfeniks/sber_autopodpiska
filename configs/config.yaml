@@ -1,0 +1,39 @@
+data:
+  test_size: 0.3
+  val_size: 0.2
+  random_state: 42
+
+features:
+#  target_col: "SalePrice"
+#  drop_cols: ["Id", "Utilities"]
+#  high_cardinality_threshold: 20
+
+model:
+#  name: "catboost"
+#  n_trials: 100
+#  cv_folds: 5
+
+mlflow:
+  experiment_name: "sber_autopodpiska"
+  tracking_uri: "mlruns"
+
+paths:
+  models_dir: "models"
+  reports_dir: "reports"
+  data_dir: "data"
+  output_dir: "outputs"
+  src_dir: "src"
+  raw_dir: "raw"
+  preprocessed_dir: "preprocessed"
+  target_file_name: "ga_hits.csv"
+  users_file_name: "ga_sessions.csv"
+
+plots:
+  fig_size: [12, 6]
+  dpi: 100
+  font_size: 12
+  style: "seaborn-v0_8-whitegrid"
+  grid: True
+  alpha: 0.3
+  spines_top: False
+  spines_right: False
