@@ -1,0 +1,15 @@
+# configs/paths.yaml
+
+data_dir: "data"
+models_dir: "models"
+reports_dir: "reports"
+logs_dir: "logs"
+src_dir: "src"
+sql_dir: "sql"
+
+raw_dir: "${data_dir}/raw"
+processed_dir: "${data_dir}/processed"
+features_dir: "${data_dir}/features"
+
+data_file_name: "data.csv"  #placeholder
+table_name: null

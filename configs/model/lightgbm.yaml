@@ -1,0 +1,8 @@
+# configs/model/lightgbm.yaml
+name: "lightgbm"
+version: "0.1"
+params:
+  n_estimators: 1000
+  learning_rate: 0.05
+  max_depth: 6
+  num_leaves: 31

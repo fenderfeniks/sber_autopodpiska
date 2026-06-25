@@ -55,32 +55,40 @@ class PathsConfig:
     def raw_target_path(self, root: Path) -> Path:
         return root / self.data_dir / self.raw_dir / self.target_file_name
 
+@dataclass
+class Database:
+    host: str = "localhost"
+    port: int = 5432
+    name: str = "sber_autopodpiska"
+    user: str = "postgres"
+    password: str = "12345"
 
 @dataclass
 class ProjectConfig:
     data: DataConfig = field(default_factory=DataConfig)
-    # features: FeatureConfig = field(default_factory=FeatureConfig)
-    # model: ModelConfig = field(default_factory=ModelConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
-    mlflow_experiment: str = "default"
-    models_dir: str = "models"
-    reports_dir: str = "reports"
     plots: PlotsConfig = field(default_factory=PlotsConfig)
+    database: Database = field(default_factory=Database)
+    preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
+    features: FeatureConfig = field(default_factory=FeatureConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    mlflow_experiment: str = "default"
 
 
 def load_config(config_path: str | Path = "configs/config.yaml") -> ProjectConfig:
-    """Загружает YAML и возвращает типизированный конфиг."""
     config_path = Path(config_path)
     with open(config_path) as f:
         raw = yaml.safe_load(f)
 
     return ProjectConfig(
         data=DataConfig(**raw.get("data", {})),
-        # features=FeatureConfig(**raw.get("features", {})),
-        # model=ModelConfig(**raw.get("model", {})),
         paths=PathsConfig(**raw.get("paths", {})),
+        plots=PlotsConfig(**raw.get("plots", {})),
+        database=Database(**raw.get("database", {})),
+        preprocessing=PreprocessingConfig(**raw.get("preprocessing", {})),
+        features=FeatureConfig(**raw.get("features", {})),
+        training=TrainingConfig(**raw.get("training", {})),
+        logging=LoggingConfig(**raw.get("logging", {})),
         mlflow_experiment=raw.get("mlflow", {}).get("experiment_name", "default"),
-        models_dir=raw.get("paths", {}).get("models_dir", "models"),
-        reports_dir=raw.get("paths", {}).get("reports_dir", "reports"),
-        plots=PlotsConfig(**raw.get('plots', {})),
     )

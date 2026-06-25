@@ -1,0 +1,12 @@
+# configs/model/catboost.yaml
+name: "catboost"
+version: "0.1"
+params:
+  iterations: 1000
+  learning_rate: 0.05
+  depth: 6
+optuna_search_space:
+  iterations: [100, 1000]
+  depth: [4, 10]
+  learning_rate: [0.001, 0.1]
+  l2_leaf_reg: [1, 10]
