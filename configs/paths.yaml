@@ -12,4 +12,12 @@ processed_dir: "${data_dir}/processed"
 features_dir: "${data_dir}/features"
 
 data_file_name: "data.csv"  #placeholder
-table_name: null
+
+# --- Имена таблиц в СУБД ---
+table_name: "v_session_features"  # Имя итоговой витрины/представления, которую будет читать модель
+raw_sessions_table: "ga_sessions"
+raw_hits_table: "ga_hits"
+
+# --- Сырые файлы для первоначальной загрузки ---
+raw_sessions_file: "ga_sessions.csv"
+raw_hits_file: "ga_hits.csv"

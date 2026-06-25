@@ -32,9 +32,9 @@ seed: 42
 database:
   host: ${oc.env:DB_HOST, "localhost"}
   port: ${oc.env:DB_PORT, 5432}
-  name: ${oc.env:DB_NAME, ""}
-  user: ${oc.env:DB_USER, ""}
-  password: ${oc.env:DB_PASSWORD, ""}
+  name: ${oc.env:DB_NAME, "mlflow_db"}      # совпадает с POSTGRES_DB в докере
+  user: ${oc.env:DB_USER, "admin"}          # совпадает с POSTGRES_USER
+  password: ${oc.env:DB_PASSWORD, "admin"}  # совпадает с POSTGRES_PASSWORD
 
 # ============================================================
 # DVC — настройки версионирования (Раскомментировать при нужде)

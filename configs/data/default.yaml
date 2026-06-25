@@ -9,13 +9,18 @@ sample_pct: 1.0
 # TABULAR FEATURES & PREPROCESSING (Для классического ML)
 # ============================================================
 tabular:
-  target_col: "target"
-  drop_cols: []
+  target_col: "is_target"
+  drop_cols: ["session_id", "client_id"]
   num_fill_strategy: "median"
   cat_fill_strategy: "mode"
   outlier_method: "iqr"
   outlier_threshold: 1.5
   skip_imputation_cols: []
+
+  # --- Твои новые параметры для поиска целевого действия ---
+  target_event_action: "target_callback"     # какое действие ищем в хитах
+  target_event_category: "conversion"
+  missing_target_value: -1                  # флаг отсутствия цели в сессии
 
   # --- SMART DROPPING ---
   max_missing_pct: 0.90
