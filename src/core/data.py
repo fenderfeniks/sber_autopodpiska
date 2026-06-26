@@ -40,77 +40,84 @@ class UniversalDataLoader:
         conn_string = f"postgresql://{db.user}:{quote_plus(db.password)}@{db.host}:{db.port}/{db.name}"
         return create_engine(conn_string)
 
-    def load_data(self, sql_file_name: str = None, query_params: dict = None) -> pd.DataFrame:
+    def load_data(self, sql_file_name: str = "features/default_aggregation.sql", query_params: dict = None) -> pd.DataFrame:
         """
-        Умный и ленивый загрузчик.
-        Сэмплирует данные до загрузки в RAM и автоматически удаляет мусорные строки.
+        Умный загрузчик. Читает SQL-файл, динамически подставляет таргет-действия 
+        из Hydra-конфига, выполняет агрегацию в СУБД и возвращает DataFrame.
         """
-        df = None  # Инициализируем пустой датафрейм
-
-        # ============================================================
-        # 1. ЗАГРУЗКА И СЭМПЛИРОВАНИЕ (Lazy Loading)
-        # ============================================================
         engine = self._get_db_engine()
         
-        # 1. Читаем базовый текст SQL-запроса из файла, если он передан
-        if sql_file_name:
-            sql_path = PROJECT_ROOT / self.cfg.paths.sql_dir / sql_file_name
-            logger.info(f"Загрузка данных с помощью SQL-скрипта: {sql_path.name}")
-            with open(sql_path, "r", encoding="utf-8") as f:
-                base_query = f.read()
-        else:
-            # Если файл не передан, берем дефолтную таблицу из конфига путей
-            table_name = self.cfg.paths.table_name
-            if not table_name:
-                raise ValueError("В конфигурации не указаны ни table_name, ни sql_file_name")
-            if not re.fullmatch(r"[a-zA-Z0-9_]+", table_name):
-                raise ValueError(f"Недопустимое имя таблицы: {table_name}")
-            base_query = f"SELECT * FROM {table_name}"
+        # 1. Читаем SQL-запрос из файла
+        sql_path = PROJECT_ROOT / self.cfg.paths.sql_dir / sql_file_name
+        logger.info(f"Чтение SQL-скрипта агрегации: {sql_path.name}")
+        
+        if not sql_path.exists():
+            raise FileNotFoundError(f"SQL файл не найден по пути: {sql_path}")
+            
+        with open(sql_path, "r", encoding="utf-8") as f:
+            raw_sql_content = f.read()
 
-        # 2. Применяем смарт-сэмплирование по пользователям
+        # 2. Формируем динамическое SQL-условие для таргета на основе списка из конфига
+        # Достаем список из configs.data.tabular.target_event_actions
+        target_actions = self.cfg.data.tabular.target_event_actions
+        
+        if not target_actions:
+            raise ValueError("В конфиге configs.data.tabular.target_event_actions не указаны целевые действия!")
+            
+        # Превращаем список ['action1', 'action2'] в строку для SQL: event_action IN ('action1', 'action2')
+        formatted_actions = ", ".join([f"'{action}'" for action in target_actions])
+        target_actions_condition = f"event_action IN ({formatted_actions})"
+        
+        logger.info(f"Сформировано условие таргета: {target_actions_condition}")
+            
+        # Форматируем шаблон запроса
+        base_query = raw_sql_content.format(
+            raw_hits_table=self.cfg.paths.raw_hits_table,
+            raw_sessions_table=self.cfg.paths.raw_sessions_table,
+            target_actions_condition=target_actions_condition  # подставляем наше условие
+        )
+
+        # 3. Применяем смарт-сэмплирование по пользователям в DEV режиме
         if self.sample_pct < 1.0:
             logger.info(f"[DEV MODE] Сэмплирование по пользователям: {self.sample_pct * 100}%")
             query = f"""
-            WITH full_dataset AS (
+            WITH base_dataset AS (
                 {base_query}
             ),
             sampled_users AS (
                 SELECT client_id 
-                FROM ga_sessions 
+                FROM {self.cfg.paths.raw_sessions_table} 
                 GROUP BY client_id 
                 HAVING random() < {self.sample_pct}
             )
-            SELECT f.* FROM full_dataset f
-            JOIN sampled_users s ON f.client_id = s.client_id;
+            SELECT b.* FROM base_dataset b
+            JOIN sampled_users s ON b.client_id = s.client_id;
             """
         else:
             query = base_query
 
-        # 3. Выполняем результирующий запрос в СУБД
+        # 4. Выполняем результирующий запрос в СУБД
+        logger.info("Выполнение агрегации данных внутри PostgreSQL...")
         df = pd.read_sql(query, engine, params=query_params)
+        logger.info(f"Данные успешно загружены в RAM. Размерность: {df.shape}")
 
         # ============================================================
-        # 2. SMART ROW DROPPING (Удаление слишком пустых строк)
+        # SMART ROW DROPPING (Удаление пустых строк)
         # ============================================================
-        # Защита: проверяем, что данные табличные (не NLP) и параметр существует
         if self.cfg.data.tabular and hasattr(self.cfg.data.tabular, 'max_row_missing_pct'):
             row_missing_threshold = self.cfg.data.tabular.max_row_missing_pct
 
             if row_missing_threshold < 1.0:
                 initial_rows = len(df)
                 total_cols = df.shape[1]
-
-                # Считаем минимально допустимое количество ЗАПОЛНЕННЫХ ячеек
-                # Например: из 10 колонок при пороге 0.5 (50%) хотя бы 5 должны быть не NaN
                 min_non_nulls = int(total_cols * (1.0 - row_missing_threshold))
 
-                # Векторизованное удаление на C-уровне (thresh требует указать кол-во НЕ-пустых)
                 df = df.dropna(thresh=min_non_nulls).reset_index(drop=True)
 
                 dropped_rows = initial_rows - len(df)
                 if dropped_rows > 0:
                     logger.info(
-                        f"[SMART DROP] Удалено {dropped_rows} мусорных строк "
+                        f"[SMART DROP] Удалено {dropped_rows} строк "
                         f"(содержали > {row_missing_threshold * 100}% пропусков)."
                     )
 

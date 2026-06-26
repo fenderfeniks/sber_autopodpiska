@@ -10,7 +10,7 @@ sample_pct: 0.2
 # ============================================================
 tabular:
   target_col: "event_value"
-  drop_cols: ["session_id", "client_id"]
+  drop_cols: ["session_id", "client_id", "hits_before_target", "rn"]
   num_fill_strategy: "median"
   cat_fill_strategy: "mode"
   outlier_method: "iqr"
@@ -53,3 +53,10 @@ tabular:
     - "IZEXUFLARCUMynmHNBGo"
     - "PlbkrSYoHuZBWfYjYnfw"
     - "gVRrcxiDQubJiljoTbGm"
+
+  geo:
+    russia: ["Russia"]
+    cis: ["Belarus", "Kazakhstan", "Armenia", "Uzbekistan", "Kyrgyzstan", "Tajikistan", "Moldova", "Azerbaijan"]
+
+  devices:
+    mobile_categories: ["mobile", "tablet"]

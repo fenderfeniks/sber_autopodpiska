@@ -11,6 +11,7 @@ log_file: "${paths.logs_dir}/pipeline.log"
 # ============================================================
 mlflow:
   tracking_uri: "file:./logs/mlruns"
+  experiment_name: "sber_car_subscription"
   experiments:
     eda: "EDA"
     preprocessing: "Preprocessing"

@@ -32,8 +32,8 @@ class MLPipeline:
     def _get_preprocessor(self) -> Pipeline:
         """Собирает Scikit-Learn пайплайн для обработки фичей."""
         return Pipeline([
-            ('cleaner', TabularPreprocessor(self.cfg)),
-            ('engineer', FeatureEngineer(self.cfg))
+            ('engineer', FeatureEngineer(self.cfg)),
+            ('cleaner', TabularPreprocessor(self.cfg))     
         ])
 
     def train(self, X_train, y_train, X_val=None, y_val=None,

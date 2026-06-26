@@ -17,29 +17,45 @@ logger = logging.getLogger(__name__)
 
 class TabularPreprocessor(BaseEstimator, TransformerMixin):
     """
-    Умный класс очистки. Автоматически различает числовые и категориальные признаки,
-    удаляет мусорные колонки и обрезает выбросы.
+    Класс технической предобработки. 
+    Отвечает за умную импутацию пропусков по бизнес-правилам, 
+    схлопывание редких категорий и фильтрацию констант.
     """
 
     def __init__(self, config: DictConfig):
+        self.full_cfg = config
         self.cfg = config.data.tabular
+        
         self.num_strategy = getattr(self.cfg, 'num_fill_strategy', 'median')
         self.cat_strategy = getattr(self.cfg, 'cat_fill_strategy', 'unknown')
+        
         self.drop_cols = list(self.cfg.drop_cols) if self.cfg.drop_cols else []
         self.skip_imputation = set(getattr(self.cfg, 'skip_imputation_cols', []))
+        self.top_n_categories = getattr(self.cfg, 'top_n_categories', 12)
 
     def fit(self, X: pd.DataFrame, y=None):
-
         self.fill_values_ = {}
         self.outlier_bounds_ = {}
+        self.top_categories_map_ = {}
 
-        X_fit = X.drop(columns=self.drop_cols, errors='ignore')
+        # Базовые копии для анализа статистик трейна
+        X_fit = X.copy()
+        
+        # 1. Расчет статистик для умной импутации площади экрана по брендам
+        self.global_screen_area_median_ = X_fit['screen_area'].median() if 'screen_area' in X_fit.columns else 0
+        if 'device_brand' in X_fit.columns and 'screen_area' in X_fit.columns:
+            # Запоминаем медианы экранов для каждого бренда на трейне
+            self.brand_screen_medians_ = X_fit.groupby('device_brand')['screen_area'].median().to_dict()
+        else:
+            self.brand_screen_medians_ = {}
+
+        # Исключаем технические колонки из анализа пропусков и констант
+        technical_cols = self.drop_cols + ['session_id', 'client_id', 'visit_date', 'visit_time', 'device_screen_resolution']
+        X_fit = X_fit.drop(columns=technical_cols, errors='ignore')
 
         # ==========================================================
-        # ШАГ 1: УДАЛЕНИЕ МУСОРНЫХ КОЛОНОК (Пустые и Константные)
+        # ШАГ 1: АНАЛИЗ МУСОРНЫХ КОЛОНОК (Пропуски и Константы)
         # ==========================================================
-
-        # 1. Анализ пропусков и констант
         missing_frac = X_fit.isnull().mean()
         max_missing = getattr(self.cfg, 'max_missing_pct', 0.90)
         cols_to_drop_missing = missing_frac[missing_frac > max_missing].index.tolist()
@@ -47,19 +63,24 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         cols_to_drop_const = []
         max_const = getattr(self.cfg, 'max_constant_pct', 0.99)
         for col in X_fit.columns:
-            # Защита от пустых колонок
             val_counts = X_fit[col].value_counts(normalize=True, dropna=False)
             if not val_counts.empty and val_counts.iloc[0] > max_const:
                 cols_to_drop_const.append(col)
 
-        # Собираем все "плохие" колонки
-        self.learned_drop_cols_ = list(set(self.drop_cols + cols_to_drop_missing + cols_to_drop_const))
-
-        # Дропаем их из X_fit, чтобы не считать по ним статистики
-        X_fit = X.drop(columns=self.learned_drop_cols_, errors='ignore')
+        # Формируем финальный черный список колонок
+        self.learned_drop_cols_ = list(set(technical_cols + cols_to_drop_missing + cols_to_drop_const))
+        X_fit = X_fit.drop(columns=self.learned_drop_cols_, errors='ignore')
 
         # ==========================================================
-        # Шаг 2: РАСЧЕТ ПРОПУСКОВ (Основная логика)
+        # ШАГ 2: КАРТИРОВАНИЕ ТОП-КАТЕГОРИЙ (Схлопывание хвостов)
+        # ==========================================================
+        categorical_cols = X_fit.select_dtypes(exclude=[np.number]).columns
+        for col in categorical_cols:
+            top_vals = X_fit[col].value_counts().index[:self.top_n_categories].tolist()
+            self.top_categories_map_[col] = top_vals
+
+        # ==========================================================
+        # Шаг 3: РАСЧЕТ ДЕФОЛТНЫХ ЗАГЛУШЕК ДЛЯ ОСТАВШИХСЯ НАХОДОК
         # ==========================================================
         numeric_cols = set(X_fit.select_dtypes(include=[np.number]).columns)
         for col in X_fit.columns:
@@ -72,32 +93,62 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
                     col].mode().empty else 'Unknown'
 
         # ==========================================================
-        # ШАГ 3: РАСЧЕТ ГРАНИЦ ДЛЯ ВЫБРОСОВ (Только для чисел)
+        # ШАГ 4: РАСЧЕТ ГРАНИЦ ДЛЯ ВЫБРОСОВ
         # ==========================================================
         if getattr(self.cfg, 'outlier_method', 'none') == 'zscore':
             thresh = getattr(self.cfg, 'outlier_threshold', 3.0)
             for col in numeric_cols:
                 if col in X_fit.columns:
                     mean, std = X_fit[col].mean(), X_fit[col].std()
-                    self.outlier_bounds_[col] = (mean - thresh * std, mean + thresh * std)
+                    if std > 0:
+                        self.outlier_bounds_[col] = (mean - thresh * std, mean + thresh * std)
 
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        # Проверка, был ли вызван fit()
-        check_is_fitted(self, ['fill_values_', 'learned_drop_cols_'])
-
+        check_is_fitted(self, ['fill_values_', 'learned_drop_cols_', 'top_categories_map_'])
         X_transformed = X.copy()
 
-        # 1. Удаляем все плохие колонки (которые определили в fit)
+        # ==========================================================
+        # УМНАЯ ИМПУТАЦИЯ ПО СЛОЖНЫМ ПРАВИЛАМ БИЗНЕС-ЛОГИКИ
+        # ==========================================================
+        
+        # 1. Первичная подстраховка для брендов устройств
+        if 'device_brand' in X_transformed.columns:
+            X_transformed['device_brand'] = X_transformed['device_brand'].fillna('Unknown')
+
+        # 2. Заполнение площади экрана по медиане конкретного БРЕНДА
+        if 'screen_area' in X_transformed.columns:
+            brand_medians = X_transformed['device_brand'].map(self.brand_screen_medians_)
+            brand_medians = brand_medians.fillna(self.global_screen_area_median_)
+            X_transformed['screen_area'] = X_transformed['screen_area'].fillna(brand_medians)
+
+        # 3. Направленное заполнение device_os на основе категорий и брендов
+        if 'device_os' in X_transformed.columns:
+            is_desktop = X_transformed['device_category'] == 'desktop'
+            is_mobile = X_transformed['device_category'].isin(['mobile', 'tablet'])
+            is_apple = X_transformed['device_brand'].str.lower() == 'apple'
+
+            X_transformed['device_os'] = np.where(is_desktop & X_transformed['device_os'].isnull(), 'Windows', X_transformed['device_os'])
+            X_transformed['device_os'] = np.where(is_mobile & is_apple & X_transformed['device_os'].isnull(), 'iOS', X_transformed['device_os'])
+            X_transformed['device_os'] = np.where(is_mobile & ~is_apple & X_transformed['device_os'].isnull(), 'Android', X_transformed['device_os'])
+
+        # ==========================================================
+        # ТЕХНИЧЕСКАЯ ОЧИСТКА И ФИЛЬТРАЦИЯ
+        # ==========================================================
+        
+        # 4. Применяем зафиксированное на трейне схлопывание редких категорий
+        for col, top_vals in self.top_categories_map_.items():
+            if col in X_transformed.columns:
+                X_transformed[col] = X_transformed[col].where(X_transformed[col].isin(top_vals), 'other_collapsed')
+
+        # 5. Дропаем все ненужные, пустые и константные колонки разом
         X_transformed = X_transformed.drop(columns=self.learned_drop_cols_, errors='ignore')
 
-        # 2. Заполняем пропуски
+        # 6. Финальное заполнение базовых NaN (если они где-то остались)
         X_transformed = X_transformed.fillna(self.fill_values_)
 
-        # ==========================================================
-        # ШАГ 3 (ПРОДОЛЖЕНИЕ): ОБРЕЗКА ВЫБРОСОВ (Clipping)
-        # ==========================================================
+        # 7. Обрезка экстремальных выбросов (Clipping)
         if hasattr(self, 'outlier_bounds_') and self.outlier_bounds_:
             for col, (lower, upper) in self.outlier_bounds_.items():
                 if col in X_transformed.columns:
@@ -105,90 +156,80 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
 
         return X_transformed
 
-# ============================================================
-# 2. ПРЕПРОЦЕССИНГ Кастомный препроцессинг
-# ============================================================
-
-class CustomImputer(BaseEstimator, TransformerMixin):
-    """
-    Кастомный импьютер для колонок, пропущенных в TabularPreprocessor.
-    Пример логики: заполнение пропусков средним значением с группировкой по другой колонке.
-    """
-
-    def __init__(self, target_cols: list[str], group_col: str):
-        self.target_cols = target_cols  # Колонки с пропусками (например, 'salary', 'age')
-        self.group_col = group_col  # Колонка для группировки (например, 'city')
-
-        # Словарь для хранения вычисленных средних на Train-выборке
-        self.group_means_ = {}
-
-    def fit(self, X: pd.DataFrame, y=None):
-        logger.info(f"Обучение CustomImputer: группировка по {self.group_col}...")
-
-        # Защита: проверяем, есть ли колонка группировки в данных
-        if self.group_col not in X.columns:
-            raise ValueError(f"Колонка {self.group_col} не найдена в датасете!")
-
-        # Вычисляем средние значения только на X_fit (чтобы не было утечки данных)
-        for col in self.target_cols:
-            if col in X.columns:
-                # Сохраняем словарь: {город1: средняя_зп, город2: средняя_зп}
-                self.group_means_[col] = X.groupby(self.group_col)[col].mean().to_dict()
-
-                # Запоминаем глобальное среднее на случай, если в Test попадется
-                # совершенно новый город, которого не было в Train
-                self.group_means_[f"{col}_global_mean"] = X[col].mean()
-
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        logger.info("Применение CustomImputer...")
-        X_transformed = X.copy()
-
-        for col in self.target_cols:
-            if col in X_transformed.columns:
-                # 1. Заполняем пропуски словарем с группировкой
-                mapped_values = X_transformed[self.group_col].map(self.group_means_[col])
-                X_transformed[col] = X_transformed[col].fillna(mapped_values)
-
-                # 2. Если остались пропуски (попался новый город из Test),
-                # бьем глобальным средним значением
-                global_mean = self.group_means_.get(f"{col}_global_mean", 0)
-                X_transformed[col] = X_transformed[col].fillna(global_mean)
-
-        return X_transformed
 
 # ============================================================
-# 3. ИНЖЕНЕРИЯ ПРИЗНАКОВ (Генерация новых фичей)
+# 2. ИНЖЕНЕРИЯ ПРИЗНАКОВ (Генерация новых фичей)
 # ============================================================
 
 class FeatureEngineer(BaseEstimator, TransformerMixin):
     """
-    Генерация новых бизнес-фичей.
-    Обычно не требует метода fit, так как трансформации построчные.
+    Генерация бизнес-признаков, парсинг гео, расчет площади экрана.
     """
-
     def __init__(self, config: DictConfig):
         self.cfg = config
+        # Загружаем списки из Hydra-конфига с дефолтами на случай их отсутствия
+        self.cis_countries = list(getattr(config.data.tabular.geo, 'cis', []))
+        self.mobile_cats = list(getattr(config.data.tabular.devices, 'mobile_categories', ['mobile', 'tablet']))
 
     def fit(self, X: pd.DataFrame, y=None):
-        # Нам не нужно собирать статистику для генерации фичей
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        logger.debug("Генерация новых признаков...")
+        logger.info("Запуск Feature Engineering...")
         X_transformed = X.copy()
 
-        # --- ПРИМЕРЫ (Плейсхолдеры для шаблона) ---
+        # 0. СИНХРОНИЗАЦИЯ ЗАГЛУШЕК (Убираем конфликт Other)
+        # Заменяем встроенные GA-заглушки на честные NaN, чтобы они ушли в импутацию
+        for col in X_transformed.select_dtypes(include=['object']).columns:
+            X_transformed[col] = X_transformed[col].replace(['(Other)', '(not set)', 'other'], np.nan)
 
-        # Если есть колонка с датой, вытаскиваем месяц/день недели
-        # if 'created_at' in X_transformed.columns:
-        #     X_transformed['created_at'] = pd.to_datetime(X_transformed['created_at'])
-        #     X_transformed['month'] = X_transformed['created_at'].dt.month
-        #     X_transformed['is_weekend'] = X_transformed['created_at'].dt.dayofweek >= 5
+        # 1. ПАРСИНГ ПЛОЩАДИ ЭКРАНА (device_screen_resolution: '360x640')
+        if 'device_screen_resolution' in X_transformed.columns:
+            # Разбиваем строку по 'x'
+            res_split = X_transformed['device_screen_resolution'].astype(str).str.split('x', expand=True)
+            if res_split.shape[1] >= 2:
+                # Переводим в числа, пропуски станут NaN
+                width = pd.to_numeric(res_split[0], errors='coerce')
+                height = pd.to_numeric(res_split[1], errors='coerce')
+                # Считаем площадь в мегапикселях (или просто пикселях)
+                X_transformed['screen_area'] = width * height
+            else:
+                X_transformed['screen_area'] = np.nan
+        else:
+            X_transformed['screen_area'] = np.nan
 
-        # Пример математической фичи
-        # if 'income' in X_transformed.columns and 'expenses' in X_transformed.columns:
-        #     X_transformed['savings_ratio'] = X_transformed['income'] / (X_transformed['expenses'] + 1e-5)
+        # 2. ГЕО-РАЗДЕЛЕНИЕ (Россия, СНГ, Остальные)
+        if 'geo_country' in X_transformed.columns:
+            conditions = [
+                X_transformed['geo_country'] == 'Russia',
+                X_transformed['geo_country'].isin(self.cis_countries)
+            ]
+            choices = ['russia', 'cis']
+            X_transformed['geo_zone'] = np.select(conditions, choices, default='other_countries')
+        else:
+            X_transformed['geo_zone'] = 'other_countries'
+
+        # 3. МОБИЛЬНОЕ ЛИ УСТРОЙСТВО (is_mobile)
+        if 'device_category' in X_transformed.columns:
+            X_transformed['is_mobile_device'] = X_transformed['device_category'].isin(self.mobile_cats).astype(int)
+        else:
+            X_transformed['is_mobile_device'] = 0
+
+        # 4. КАЛЕНДАРНЫЕ ФИЧИ И КРОССЫ
+        if 'visit_date' in X_transformed.columns:
+            date_series = pd.to_datetime(X_transformed['visit_date'], errors='coerce')
+            X_transformed['day_of_week'] = date_series.dt.dayofweek.fillna(0).astype(int)
+            X_transformed['is_weekend'] = X_transformed['day_of_week'].isin([5, 6]).astype(int)
+
+        if 'visit_time' in X_transformed.columns:
+            hours = pd.to_datetime(X_transformed['visit_time'], format='%H:%M:%S', errors='coerce').dt.hour
+            if hours.isnull().all():
+                hours = pd.to_numeric(X_transformed['visit_time'], errors='coerce').fillna(12)
+            X_transformed['is_night'] = hours.isin([23, 0, 1, 2, 3, 4, 5]).astype(int)
+
+        if 'device_category' in X_transformed.columns and 'device_brand' in X_transformed.columns:
+            X_transformed['dev_category_brand'] = (
+                X_transformed['device_category'].astype(str) + "_" + X_transformed['device_brand'].astype(str)
+            )
 
         return X_transformed
