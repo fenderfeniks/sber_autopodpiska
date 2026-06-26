@@ -25,13 +25,11 @@ class UniversalDataLoader:
     def __init__(self, config: DictConfig):
         self.cfg = config
         self.seed = config.seed
+
         self.data_cfg = config.data
 
-        # МАСТЕР-ПЕРЕКЛЮЧАТЕЛЬ: защита от случайного сэмплирования в проде
-        self.is_dev_mode = (self.cfg.env == "dev")
-
         # Если мы в dev, берем процент из конфига, иначе жестко 1.0 (100%)
-        self.sample_pct = self.data_cfg.sample_pct if self.is_dev_mode else 1.0
+        self.sample_pct = self.data_cfg.sample_pct
 
     def _get_db_engine(self):
         """Создает подключение к БД на основе защищенного конфига."""
@@ -42,7 +40,7 @@ class UniversalDataLoader:
         conn_string = f"postgresql://{db.user}:{quote_plus(db.password)}@{db.host}:{db.port}/{db.name}"
         return create_engine(conn_string)
 
-    def load_data(self) -> pd.DataFrame:
+    def load_data(self, sql_file_name: str = None, query_params: dict = None) -> pd.DataFrame:
         """
         Умный и ленивый загрузчик.
         Сэмплирует данные до загрузки в RAM и автоматически удаляет мусорные строки.
@@ -52,67 +50,44 @@ class UniversalDataLoader:
         # ============================================================
         # 1. ЗАГРУЗКА И СЭМПЛИРОВАНИЕ (Lazy Loading)
         # ============================================================
-        if self.cfg.paths.table_name:
-            table_name = self.cfg.paths.table_name
-            logger.info(f"Загрузка из БД, таблица: {table_name}")
-
-            #Валидация имени таблицы (Защита от SQL Injection)
-            if not re.fullmatch(r"[a-zA-Z0-9_]+", table_name):
-                raise ValueError(f"Недопустимое имя таблицы базы данных: {table_name}")
-
-            engine = self._get_db_engine()
-
-            if self.sample_pct < 1.0:
-                logger.info(f"[DEV MODE] SQL-сэмплирование: {self.sample_pct * 100}%")
-                # === РАСКОММЕНТИРУЙ НУЖНЫЙ ДИАЛЕКТ ===
-
-                # 1. PostgreSQL / SQLite
-                query = f"SELECT * FROM {table_name} WHERE random() < {self.sample_pct}"
-
-                # 2. MySQL / SQL Server
-                # query = f"SELECT * FROM {table_name} ORDER BY RAND() LIMIT {int(total_rows * self.sample_pct)}"
-
-                # 3. Oracle
-                # query = f"SELECT * FROM {table_name} SAMPLE({self.sample_pct * 100})"
-            else:
-                query = f"SELECT * FROM {table_name}"
-
-            df = pd.read_sql(query, engine)
-
+        engine = self._get_db_engine()
+        
+        # 1. Читаем базовый текст SQL-запроса из файла, если он передан
+        if sql_file_name:
+            sql_path = PROJECT_ROOT / self.cfg.paths.sql_dir / sql_file_name
+            logger.info(f"Загрузка данных с помощью SQL-скрипта: {sql_path.name}")
+            with open(sql_path, "r", encoding="utf-8") as f:
+                base_query = f.read()
         else:
-            file_path = PROJECT_ROOT / self.cfg.paths.raw_dir / self.cfg.paths.data_file_name
-            if not file_path.exists():
-                raise FileNotFoundError(f"Файл не найден: {file_path}")
+            # Если файл не передан, берем дефолтную таблицу из конфига путей
+            table_name = self.cfg.paths.table_name
+            if not table_name:
+                raise ValueError("В конфигурации не указаны ни table_name, ни sql_file_name")
+            if not re.fullmatch(r"[a-zA-Z0-9_]+", table_name):
+                raise ValueError(f"Недопустимое имя таблицы: {table_name}")
+            base_query = f"SELECT * FROM {table_name}"
 
-            logger.info(f"Чтение файла: {file_path.name}")
+        # 2. Применяем смарт-сэмплирование по пользователям
+        if self.sample_pct < 1.0:
+            logger.info(f"[DEV MODE] Сэмплирование по пользователям: {self.sample_pct * 100}%")
+            query = f"""
+            WITH full_dataset AS (
+                {base_query}
+            ),
+            sampled_users AS (
+                SELECT client_id 
+                FROM ga_sessions 
+                GROUP BY client_id 
+                HAVING random() < {self.sample_pct}
+            )
+            SELECT f.* FROM full_dataset f
+            JOIN sampled_users s ON f.client_id = s.client_id;
+            """
+        else:
+            query = base_query
 
-            # --- CSV ---
-            if file_path.suffix == '.csv':
-                if self.sample_pct < 1.0:
-                    logger.info(f"[DEV MODE] Быстрое сэмплирование CSV (DuckDB): {self.sample_pct * 100}%")
-                    # Устранили горлышко с lambda! DuckDB читает CSV в десятки раз быстрее.
-                    query = f"SELECT * FROM read_csv_auto('{file_path}') USING SAMPLE {self.sample_pct * 100} PERCENT (bernoulli)"
-                    df = duckdb.query(query).to_df()
-                else:
-                    # В проде читаем весь файл через оптимизированный движок pyarrow (если установлен),
-                    # иначе Pandas сам откатится на стандартный C-engine.
-                    try:
-                        df = pd.read_csv(file_path, engine='pyarrow')
-                    except ImportError:
-                        logger.warning("pyarrow не установлен. Используется стандартный engine Pandas.")
-                        df = pd.read_csv(file_path)
-
-            # --- PARQUET ---
-            elif file_path.suffix in ['.parquet', '.pqt']:
-                if self.sample_pct < 1.0:
-                    logger.info(f"[DEV MODE] Ленивое чтение Parquet (DuckDB): {self.sample_pct * 100}%")
-                    query = f"SELECT * FROM '{file_path}' USING SAMPLE {self.sample_pct * 100} PERCENT (bernoulli)"
-                    df = duckdb.query(query).to_df()
-                else:
-                    df = pd.read_parquet(file_path)
-
-            else:
-                raise ValueError(f"Формат {file_path.suffix} не поддерживается.")
+        # 3. Выполняем результирующий запрос в СУБД
+        df = pd.read_sql(query, engine, params=query_params)
 
         # ============================================================
         # 2. SMART ROW DROPPING (Удаление слишком пустых строк)

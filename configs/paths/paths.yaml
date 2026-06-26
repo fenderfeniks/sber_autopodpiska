@@ -7,14 +7,14 @@ logs_dir: "logs"
 src_dir: "src"
 sql_dir: "sql"
 
-raw_dir: "${data_dir}/raw"
-processed_dir: "${data_dir}/processed"
-features_dir: "${data_dir}/features"
+raw_dir: "${paths.data_dir}/raw"
+processed_dir: "${paths.data_dir}/processed"
+features_dir: "${paths.data_dir}/features"
 
 data_file_name: "data.csv"  #placeholder
 
 # --- Имена таблиц в СУБД ---
-table_name: "v_session_features"  # Имя итоговой витрины/представления, которую будет читать модель
+table_name: "ga_sessions"  # Имя итоговой витрины/представления, которую будет читать модель
 raw_sessions_table: "ga_sessions"
 raw_hits_table: "ga_hits"
 

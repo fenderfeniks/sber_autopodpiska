@@ -1,12 +1,12 @@
 # configs/config.yaml
 defaults:
-  - env: dev #prod
-  - paths@paths
+  - paths: paths
   - data: default
   - security: security
-  - model: catboost  # catboost | lightgbm | xgboost | pytorch
+  - model: catboost
   - training: default
   - logging: default
+  - env@_global_: dev  # Подгружаем dev.yaml и мержим его ключи в корень
   - _self_
 
 # ============================================================
@@ -30,11 +30,11 @@ seed: 42
 # DATABASE — параметры подключения
 # ============================================================
 database:
-  host: ${oc.env:DB_HOST, "localhost"}
-  port: ${oc.env:DB_PORT, 5432}
-  name: ${oc.env:DB_NAME, "mlflow_db"}      # совпадает с POSTGRES_DB в докере
-  user: ${oc.env:DB_USER, "admin"}          # совпадает с POSTGRES_USER
-  password: ${oc.env:DB_PASSWORD, "admin"}  # совпадает с POSTGRES_PASSWORD
+  host: ${oc.env:POSTGRES_HOST, "localhost"}
+  port: ${oc.env:POSTGRES_PORT, 5432}
+  name: ${oc.env:POSTGRES_DB, ""}
+  user: ${oc.env:POSTGRES_USER, ""}
+  password: ${oc.env:POSTGRES_PASSWORD, ""}
 
 # ============================================================
 # DVC — настройки версионирования (Раскомментировать при нужде)

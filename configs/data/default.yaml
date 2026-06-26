@@ -3,13 +3,13 @@
 # ============================================================
 test_size: 0.2
 val_size: 0.1
-sample_pct: 1.0
+sample_pct: 0.2
 
 # ============================================================
 # TABULAR FEATURES & PREPROCESSING (Для классического ML)
 # ============================================================
 tabular:
-  target_col: "is_target"
+  target_col: "event_value"
   drop_cols: ["session_id", "client_id"]
   num_fill_strategy: "median"
   cat_fill_strategy: "mode"
@@ -17,11 +17,39 @@ tabular:
   outlier_threshold: 1.5
   skip_imputation_cols: []
 
-  # --- Твои новые параметры для поиска целевого действия ---
-  target_event_action: "target_callback"     # какое действие ищем в хитах
-  target_event_category: "conversion"
-  missing_target_value: -1                  # флаг отсутствия цели в сессии
-
   # --- SMART DROPPING ---
   max_missing_pct: 0.90
   max_constant_pct: 0.99
+
+  # ============================================================
+  # БИЗНЕС-ПРАВИЛА И КЛЮЧИ ДЛЯ FEATURE ENGINEERING
+  # ============================================================
+  
+  # Значение-заглушка для числовых фич, если целевого действия не было в сессии
+  missing_target_value: -1
+
+  # Список целевых действий (ga_hits.event_action)
+  target_event_actions:
+    - "sub_car_claim_click"
+    - "sub_car_claim_submit_click"
+    - "sub_open_dialog_click"
+    - "sub_custom_question_submit_click"
+    - "sub_call_number_click"
+    - "sub_callback_submit_click"
+    - "sub_submit_success"
+    - "sub_car_request_submit_click"
+
+  # Медиумы органического трафика (ga_sessions.utm_medium)
+  organic_mediums:
+    - "organic"
+    - "referral"
+    - "(none)"
+
+  # Каналы рекламы в социальных сетях (ga_sessions.utm_source)
+  social_ad_sources:
+    - "QxAxdyPLuQMEcrdZWdWb"
+    - "MvfHsxITijuriZxsqZqt"
+    - "ISrKoXQCxqqYvAZICvjs"
+    - "IZEXUFLARCUMynmHNBGo"
+    - "PlbkrSYoHuZBWfYjYnfw"
+    - "gVRrcxiDQubJiljoTbGm"
