@@ -164,41 +164,61 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
 class FeatureEngineer(BaseEstimator, TransformerMixin):
     """
     Генерация бизнес-признаков, парсинг гео, расчет площади экрана.
+    Данные по городам динамически подгружаются из Hydra-конфига и обрабатываются в transform.
     """
     def __init__(self, config: DictConfig):
         self.cfg = config
-        # Загружаем списки из Hydra-конфига с дефолтами на случай их отсутствия
-        self.cis_countries = list(getattr(config.data.tabular.geo, 'cis', []))
-        self.mobile_cats = list(getattr(config.data.tabular.devices, 'mobile_categories', ['mobile', 'tablet']))
+        
+        # 1. Безопасно достаем конфигурацию по гео и девайсам через .get()
+        tabular_cfg = config.get('data', {}).get('tabular', {})
+        geo_cfg = tabular_cfg.get('geo', {})
+        devices_cfg = tabular_cfg.get('devices', {})
+        
+        self.cis_countries = list(geo_cfg.get('cis', []))
+        self.mobile_cats = list(devices_cfg.get('mobile_categories', ['mobile', 'tablet']))
+
+        # 2. Извлекаем справочник городов прямо из пути cfg.data.tabular
+        # Конвертируем в нативный dict для максимальной скорости работы .map() в Pandas
+        city_markets_cfg = tabular_cfg.get('city_markets', {})
+        self.city_markets = OmegaConf.to_container(city_markets_cfg, resolve=True) if city_markets_cfg else {}
+        
+        # Загружаем дефолтный профиль на случай редких/пропущенных локаций
+        defaults_cfg = tabular_cfg.get('defaults_fallback', {})
+        self.city_defaults = OmegaConf.to_container(defaults_cfg, resolve=True) if defaults_cfg else {
+            'has_metro': 0, 'population_2021': 100000, 'avg_salary_2021': 33000, 'cars_per_family': 0.65
+        }
 
     def fit(self, X: pd.DataFrame, y=None):
+        # Нам не нужно собирать статистику, так как трансформации детерминированные
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        logger.info("Запуск Feature Engineering...")
+        logger.info("Запуск Feature Engineering пайплайна...")
         X_transformed = X.copy()
 
-        # 0. СИНХРОНИЗАЦИЯ ЗАГЛУШЕК (Убираем конфликт Other)
-        # Заменяем встроенные GA-заглушки на честные NaN, чтобы они ушли в импутацию
+        # ==========================================================
+        # 1. СИНХРОНИЗАЦИЯ ЗАГЛУШЕК (Убираем конфликт Other)
+        # ==========================================================
         for col in X_transformed.select_dtypes(include=['object']).columns:
             X_transformed[col] = X_transformed[col].replace(['(Other)', '(not set)', 'other'], np.nan)
 
-        # 1. ПАРСИНГ ПЛОЩАДИ ЭКРАНА (device_screen_resolution: '360x640')
+        # ==========================================================
+        # 2. ПАРСИНГ ПЛОЩАДИ ЭКРАНА
+        # ==========================================================
         if 'device_screen_resolution' in X_transformed.columns:
-            # Разбиваем строку по 'x'
             res_split = X_transformed['device_screen_resolution'].astype(str).str.split('x', expand=True)
             if res_split.shape[1] >= 2:
-                # Переводим в числа, пропуски станут NaN
                 width = pd.to_numeric(res_split[0], errors='coerce')
                 height = pd.to_numeric(res_split[1], errors='coerce')
-                # Считаем площадь в мегапикселях (или просто пикселях)
                 X_transformed['screen_area'] = width * height
             else:
                 X_transformed['screen_area'] = np.nan
         else:
             X_transformed['screen_area'] = np.nan
 
-        # 2. ГЕО-РАЗДЕЛЕНИЕ (Россия, СНГ, Остальные)
+        # ==========================================================
+        # 3. ГЕО-ЗОНЫ И МОБИЛЬНОСТЬ
+        # ==========================================================
         if 'geo_country' in X_transformed.columns:
             conditions = [
                 X_transformed['geo_country'] == 'Russia',
@@ -209,13 +229,14 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         else:
             X_transformed['geo_zone'] = 'other_countries'
 
-        # 3. МОБИЛЬНОЕ ЛИ УСТРОЙСТВО (is_mobile)
         if 'device_category' in X_transformed.columns:
             X_transformed['is_mobile_device'] = X_transformed['device_category'].isin(self.mobile_cats).astype(int)
         else:
             X_transformed['is_mobile_device'] = 0
 
-        # 4. КАЛЕНДАРНЫЕ ФИЧИ И КРОССЫ
+        # ==========================================================
+        # 4. КАЛЕНДАРНЫЕ И ВРЕМЕННЫЕ Признаки
+        # ==========================================================
         if 'visit_date' in X_transformed.columns:
             date_series = pd.to_datetime(X_transformed['visit_date'], errors='coerce')
             X_transformed['day_of_week'] = date_series.dt.dayofweek.fillna(0).astype(int)
@@ -227,9 +248,52 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
                 hours = pd.to_numeric(X_transformed['visit_time'], errors='coerce').fillna(12)
             X_transformed['is_night'] = hours.isin([23, 0, 1, 2, 3, 4, 5]).astype(int)
 
+        # ==========================================================
+        # 5. МАТЕМАТИКА СКОРОСТИ КЛИКОВ И КРОССЫ
+        # ==========================================================
+        if 'last_hit_time_ms' in X_transformed.columns and 'first_hit_time_ms' in X_transformed.columns:
+            X_transformed['session_duration_ms'] = X_transformed['last_hit_time_ms'] - X_transformed['first_hit_time_ms']
+            if 'total_hits_count' in X_transformed.columns:
+                X_transformed['ms_per_hit'] = np.where(
+                    X_transformed['total_hits_count'] > 0,
+                    X_transformed['session_duration_ms'] / X_transformed['total_hits_count'],
+                    0
+                )
+
         if 'device_category' in X_transformed.columns and 'device_brand' in X_transformed.columns:
             X_transformed['dev_category_brand'] = (
                 X_transformed['device_category'].astype(str) + "_" + X_transformed['device_brand'].astype(str)
             )
+
+        # ==========================================================
+        # 6. ВСТРОЕННОЕ ОБОГАЩЕНИЕ ДЕМОГРАФИЕЙ ГОРОДОВ (Из конфига)
+        # ==========================================================
+        if 'geo_city' in X_transformed.columns:
+            # Нормализуем строку города для точного мэтчинга с ключами YAML
+            city_normalized = X_transformed['geo_city'].astype(str).str.lower().str.strip()
+            
+            # Маппим признаки, используя кэшированный нативный python-dict
+            X_transformed['has_metro'] = city_normalized.map(
+                lambda x: self.city_markets.get(x, {}).get('has_metro', self.city_defaults['has_metro'])
+            )
+            X_transformed['city_population'] = city_normalized.map(
+                lambda x: self.city_markets.get(x, {}).get('population_2021', self.city_defaults['population_2021'])
+            )
+            X_transformed['city_avg_salary'] = city_normalized.map(
+                lambda x: self.city_markets.get(x, {}).get('avg_salary_2021', self.city_defaults['avg_salary_2021'])
+            )
+            X_transformed['city_cars_per_family'] = city_normalized.map(
+                lambda x: self.city_markets.get(x, {}).get('cars_per_family', self.city_defaults['cars_per_family'])
+            )
+        else:
+            # Если колонки нет, заполняем дефолтными значениями
+            X_transformed['has_metro'] = self.city_defaults['has_metro']
+            X_transformed['city_population'] = self.city_defaults['population_2021']
+            X_transformed['city_avg_salary'] = self.city_defaults['avg_salary_2021']
+            X_transformed['city_cars_per_family'] = self.city_defaults['cars_per_family']
+
+        # 7. Фича-пропорция (интерес юзера к авто относительно среднего по городу)
+        if 'total_car_views' in X_transformed.columns:
+            X_transformed['user_vs_city_car_interest'] = X_transformed['total_car_views'] / (X_transformed['city_cars_per_family'] + 1e-5)
 
         return X_transformed

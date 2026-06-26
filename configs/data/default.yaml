@@ -60,3 +60,177 @@ tabular:
 
   devices:
     mobile_categories: ["mobile", "tablet"]
+
+
+city_markets:
+  # --- СВЕРХКРУПНЫЕ ЦЕНТРЫ ---
+  moscow:
+    has_metro: 1
+    population_2021: 13010000
+    avg_salary_2021: 120000
+    cars_per_family: 1.10
+  saint petersburg:
+    has_metro: 1
+    population_2021: 5600000
+    avg_salary_2021: 75000
+    cars_per_family: 0.95
+
+  # --- КРУПНЫЕ ГОРОДА-МИЛЛИОННИКИ ---
+  yekaterinburg:
+    has_metro: 1
+    population_2021: 1544000
+    avg_salary_2021: 54000
+    cars_per_family: 0.90
+  krasnodar:
+    has_metro: 0
+    population_2021: 1099000
+    avg_salary_2021: 48000
+    cars_per_family: 1.25
+  kazan:
+    has_metro: 1
+    population_2021: 1308000
+    avg_salary_2021: 45000
+    cars_per_family: 0.88
+  samara:
+    has_metro: 1
+    population_2021: 1173000
+    avg_salary_2021: 42000
+    cars_per_family: 0.86
+  nizhny novgorod:
+    has_metro: 1
+    population_2021: 1228000
+    avg_salary_2021: 43000
+    cars_per_family: 0.82
+  novosibirsk:
+    has_metro: 1
+    population_2021: 1633000
+    avg_salary_2021: 46000
+    cars_per_family: 0.85
+  ufa:
+    has_metro: 0
+    population_2021: 1144000
+    avg_salary_2021: 43500
+    cars_per_family: 0.89
+  voronezh:
+    has_metro: 0
+    population_2021: 1057001
+    avg_salary_2021: 41500
+    cars_per_family: 0.96
+  chelyabinsk:
+    has_metro: 0
+    population_2021: 1189000
+    avg_salary_2021: 44000
+    cars_per_family: 0.92
+  krasnoyarsk:
+    has_metro: 0
+    population_2021: 1187000
+    avg_salary_2021: 51000
+    cars_per_family: 1.15
+  rostov-on-don:
+    has_metro: 0
+    population_2021: 1142000
+    avg_salary_2021: 41000
+    cars_per_family: 0.98
+  perm:
+    has_metro: 0
+    population_2021: 1034000
+    avg_salary_2021: 43000
+    cars_per_family: 0.87
+
+  # --- ПОДМОСКОВНЫЙ КЛАСТЕР (Корректируем зарплаты и авто на Москву) ---
+  balashikha:
+    has_metro: 0
+    population_2021: 520000
+    avg_salary_2021: 72000
+    cars_per_family: 1.12
+  khimki:
+    has_metro: 0 # Метро формально нет (хоть и близко Речной Вокзал/Планерная)
+    population_2021: 257000
+    avg_salary_2021: 85000
+    cars_per_family: 1.15
+  vidnoye:
+    has_metro: 0
+    population_2021: 82000
+    avg_salary_2021: 70000
+    cars_per_family: 1.10
+  zheleznodorozhny:
+    has_metro: 0
+    population_2021: 150000
+    avg_salary_2021: 68000
+    cars_per_family: 1.08
+  odintsovo:
+    has_metro: 0
+    population_2021: 135000
+    avg_salary_2021: 88000
+    cars_per_family: 1.20
+  mytishchi:
+    has_metro: 0
+    population_2021: 255000
+    avg_salary_2021: 80000
+    cars_per_family: 1.14
+
+  # --- РЕГИОНАЛЬНЫЕ ЦЕНТРЫ ---
+  tula:
+    has_metro: 0
+    population_2021: 473000
+    avg_salary_2021: 45000
+    cars_per_family: 0.94
+  irkutsk:
+    has_metro: 0
+    population_2021: 617000
+    avg_salary_2021: 45000
+    cars_per_family: 1.02
+  grozny:
+    has_metro: 0
+    population_2021: 326000
+    avg_salary_2021: 33000
+    cars_per_family: 0.85
+  vladivostok:
+    has_metro: 0
+    population_2021: 600000
+    avg_salary_2021: 55000
+    cars_per_family: 1.40 # Праворульный бум, экстремально много машин
+  yaroslavl:
+    has_metro: 0
+    population_2021: 577000
+    avg_salary_2021: 40000
+    cars_per_family: 0.88
+  sochi:
+    has_metro: 0
+    population_2021: 432000
+    avg_salary_2021: 47000
+    cars_per_family: 1.05
+  tyumen:
+    has_metro: 0
+    population_2021: 847000
+    avg_salary_2021: 58000
+    cars_per_family: 1.18
+  saratov:
+    has_metro: 0
+    population_2021: 901000
+    avg_salary_2021: 37000
+    cars_per_family: 0.80
+  izhevsk:
+    has_metro: 0
+    population_2021: 623000
+    avg_salary_2021: 38500
+    cars_per_family: 0.83
+  lipetsk:
+    has_metro: 0
+    population_2021: 496000
+    avg_salary_2021: 41000
+    cars_per_family: 0.91
+
+  # --- ИНОСТРАННЫЕ / ТЕСТОВЫЕ КЛАСТЕРЫ ---
+  dublin:
+    has_metro: 0
+    population_2021: 544000
+    avg_salary_2021: 320000 # Перевод в рубли по курсу 2021 (IT-хаб Европы)
+    cars_per_family: 0.80
+
+# Дефолтный fallback для остальных 15% малых населенных пунктов
+defaults_fallback:
+  has_metro: 0
+  population_2021: 100000
+  avg_salary_2021: 33000
+  cars_per_family: 0.65

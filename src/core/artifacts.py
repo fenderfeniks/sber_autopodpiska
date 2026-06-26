@@ -35,7 +35,13 @@ class ArtifactManager:
     def log_metrics(self, metrics: Dict[str, float], step: int = None):
         """Сохраняет словарь метрик."""
         for k, v in metrics.items():
-            mlflow.log_metric(k, v, step=step)
+            # Санируем ключ: заменяем двоеточия, знаки равенства и запятые на '_'
+            safe_key = (
+                k.replace(":", "_")
+                 .replace("=", "_")
+                 .replace(",", "_")
+            )
+            mlflow.log_metric(safe_key, v, step=step)
 
     def log_params(self, params: Dict[str, Any]):
         """Сохраняет гиперпараметры."""
