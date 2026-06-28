@@ -40,7 +40,8 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         
         self.fill_values_ = {}
         self.outlier_bounds_ = {}
-
+        self.top_categories_map_ = {}
+        
         # Базовые копии для анализа статистик трейна
         X_fit = X.copy()
         

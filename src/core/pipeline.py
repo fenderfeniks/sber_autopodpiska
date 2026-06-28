@@ -108,7 +108,7 @@ class MLPipeline:
 
             # --- ПРАВКА 1: Берём новые версии из раздельных конфигов ---
             prep_ver = self.cfg.data.tabular.preprocessing_version
-            feat_ver = self.cfg.data.tabilar.features_version
+            feat_ver = self.cfg.data.tabular.features_version
             model_ver = self.cfg.model.model_version
 
             # 1. Сохраняем схему фичей для FastAPI

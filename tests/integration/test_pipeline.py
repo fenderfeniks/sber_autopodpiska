@@ -128,12 +128,15 @@ def test_artifacts_are_saved_to_disk(mock_config, sample_data):
     pipeline.train(X_train, y_train, X_val, y_val,
                    save_artifacts=True, use_tracker=False)
 
-    version = mock_config.model.version
     models_dir = Path(mock_config.paths.models_dir)
+    model_version = mock_config.model.model_version
+    preprocessor_version = mock_config.data.tabular.preprocessing_version
+    schema_version = mock_config.data.tabular.features_version
 
-    prep_path = models_dir / f"preprocessing_v{version}.pkl"
-    schema_path = models_dir / f"feature_schema_v{version}.json"
-    model_path = models_dir / f"{mock_config.model.name}_v{version}{pipeline.model.file_extension}"
+
+    prep_path = models_dir / f"preprocessing_v{preprocessor_version}.pkl"
+    schema_path = models_dir / f"feature_schema_v{schema_version}.json"
+    model_path = models_dir / f"{mock_config.model.name}_v{model_version}{pipeline.model.file_extension}"
 
     assert prep_path.exists(), f"Препроцессор не найден: {prep_path}"
     assert schema_path.exists(), f"Схема признаков не найдена: {schema_path}"
@@ -156,8 +159,8 @@ def test_feature_schema_is_valid_json(mock_config, sample_data):
     pipeline.train(X_train, y_train, X_val, y_val,
                    save_artifacts=True, use_tracker=False)
 
-    version = mock_config.model.version
-    schema_path = Path(mock_config.paths.models_dir) / f"feature_schema_v{version}.json"
+    schema_version = mock_config.data.tabular.features_version
+    schema_path = Path(mock_config.paths.models_dir) / f"feature_schema_v{schema_version}.json"
 
     with open(schema_path) as f:
         schema = json.load(f)
@@ -223,8 +226,8 @@ def test_loaded_preprocessor_transforms_consistently(mock_config, sample_data):
     X_orig = pipeline.preprocessor.transform(X_test)
 
     # Загружаем препроцессор с диска
-    version = mock_config.model.version
-    prep_path = Path(mock_config.paths.models_dir) / f"preprocessing_v{version}.pkl"
+    preprocessor_version = mock_config.data.tabular.preprocessing_version
+    prep_path = Path(mock_config.paths.models_dir) / f"preprocessing_v{preprocessor_version}.pkl"
     loaded_prep = joblib.load(prep_path)
     X_loaded = loaded_prep.transform(X_test)
 

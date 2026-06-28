@@ -18,6 +18,7 @@ from pathlib import Path
 from omegaconf import OmegaConf
 from hydra import initialize, compose
 import mlflow
+from core.utils import load_hydra_config  
 
 
 # ---------------------------------------------------------------------------
@@ -38,45 +39,45 @@ LATENCY_MEASURE_RUNS = 20
 def mock_config(tmp_path):
     """
     Создаёт изолированный конфиг для каждого теста.
-    - MLflow пишет в SQLite во временную папку (не засоряет рабочую среду).
-    - models_dir изолирован в tmp_path.
-    - Struct mode снят: тесты могут переопределять поля.
+    Использует оригинальный загрузчик проекта, обходя ограничения сигнатуры.
     """
-    with initialize(version_base=None, config_path="../configs"):
-        cfg = compose(
-            config_name="config",
-            overrides=[
-                f"data.tabular.target_col={TARGET_COL}",
-                "env=dev",
-                "data.sample_pct=1.0",
-                "data.test_size=0.2",
-                "data.val_size=0.2",
-            ]
-        )
+    # 1. Загружаем базовый конфиг через вашу функцию (без лишних аргументов)
+    cfg = load_hydra_config(config_name="config")
+    
+    # 2. Так как возвращенный конфиг может быть закеширован, 
+    # обязательно делаем глубокую копию, чтобы мутации теста не текли наружу
+    import copy
+    cfg = copy.deepcopy(cfg)
 
+    # 3. Снимаем struct mode, чтобы можно было безопасно переопределять 
+    # и добавлять новые поля (например, пути внутри tmp_path)
     OmegaConf.set_struct(cfg, False)
 
-    # Изолируем пути и MLflow в tmp_path конкретного теста
-    cfg.data_dir = str(tmp_path / "data")
+    # 4. Имитируем overrides прямо через OmegaConf.update
+    # Значения заменят дефолтные или создадут новые поля, если их не было
+    OmegaConf.update(cfg, "data.tabular.target_col", TARGET_COL)
+    OmegaConf.update(cfg, "env", "dev")
+    OmegaConf.update(cfg, "data.sample_pct", 1.0)
+    OmegaConf.update(cfg, "data.test_size", 0.2)
+    OmegaConf.update(cfg, "data.val_size", 0.2)
 
+    # 5. Изолируем пути проекта внутри tmp_path конкретного тест-кейса
+    cfg.data_dir = str(tmp_path / "data")
     cfg.paths.data_dir = str(tmp_path / "data")
     cfg.paths.raw_dir = str(tmp_path / "data/raw")
     cfg.paths.processed_dir = str(tmp_path / "data/processed")
-    cfg.paths.features_dir = str(tmp_path / "data/features")  # <--- Не хватало этого
+    cfg.paths.features_dir = str(tmp_path / "data/features")
     cfg.paths.logs_dir = str(tmp_path / "logs")
     cfg.paths.models_dir = str(tmp_path / "models")
 
+    # 6. Настраиваем изолированный MLflow
     cfg.logging.mlflow.tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
     cfg.logging.log_file = str(tmp_path / "test_pipeline.log")
 
     Path(cfg.paths.models_dir).mkdir(parents=True, exist_ok=True)
 
-    # =========================================================
-    # ИСПРАВЛЕНИЕ: Жестко сбрасываем кэш MLflow для нового теста
-    # =========================================================
     mlflow.set_tracking_uri(cfg.logging.mlflow.tracking_uri)
     mlflow.set_experiment("Default")
-    # =========================================================
 
     return cfg
 
