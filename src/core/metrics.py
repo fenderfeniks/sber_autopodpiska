@@ -8,13 +8,18 @@ from sklearn.metrics import (
     roc_auc_score,
     mean_squared_error,
     mean_absolute_error,
-    r2_score
+    r2_score,
+    classification_report
 )
+from core.utils import load_hydra_config
 
+
+cfg = load_hydra_config()
+task_type = cfg.get('task_type', '')
 logger = logging.getLogger(__name__)
 
 
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, task_type: str, y_prob: np.ndarray = None) -> dict:
+def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray = None) -> dict:
     """
     Универсальная считалка метрик для любой модели.
 
@@ -26,9 +31,11 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, task_type: str, y_
     metrics = {}
 
     if task_type in ['binary', 'multiclass']:
-        metrics['accuracy'] = accuracy_score(y_true, y_pred)
+
+        print(classification_report(y_true, y_pred))
+        metrics['accuracy'] = round(accuracy_score(y_true, y_pred), 4)
         # weighted отлично работает и для сбалансированных, и для дисбалансных выборок
-        metrics['f1_weighted'] = f1_score(y_true, y_pred, average='weighted')
+        metrics['f1_weighted'] = round(f1_score(y_true, y_pred, average='weighted'), 4)
 
         # === ЛОГИКА ROC-AUC ===
         if y_prob is not None:
@@ -40,18 +47,21 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, task_type: str, y_
                         prob_pos = y_prob[:, 1]
                     else:
                         prob_pos = y_prob
-                    metrics['roc_auc'] = roc_auc_score(y_true, prob_pos)
+                    metrics['roc_auc'] = round(roc_auc_score(y_true, prob_pos), 4)
 
                 elif task_type == 'multiclass':
                     # Для мультикласса нужна 2D матрица вероятностей всех классов
-                    metrics['roc_auc_ovr'] = roc_auc_score(y_true, y_prob, multi_class='ovr')
+                    metrics['roc_auc_ovr'] = round(
+                        roc_auc_score(y_true, y_prob, multi_class='ovr'), 
+                        4
+                    )
             except ValueError as e:
                 # roc_auc может упасть, если в валидационном батче представлены не все классы
                 logger.warning(f"Не удалось рассчитать ROC-AUC (возможно, не все классы в выборке): {e}")
 
     elif task_type == 'regression':
-        metrics['rmse'] = np.sqrt(mean_squared_error(y_true, y_pred))
-        metrics['mae'] = mean_absolute_error(y_true, y_pred)
-        metrics['r2'] = r2_score(y_true, y_pred)
+        metrics['rmse'] = round(np.sqrt(mean_squared_error(y_true, y_pred)), 4)
+        metrics['mae'] = round(mean_absolute_error(y_true, y_pred), 4)
+        metrics['r2'] = round(r2_score(y_true, y_pred), 4)
 
     return metrics
