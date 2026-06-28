@@ -10,13 +10,14 @@ log_file: "${paths.logs_dir}/pipeline.log"
 # MLFLOW
 # ============================================================
 mlflow:
-  tracking_uri: "file:./logs/mlruns"
+  tracking_uri: "sqlite:///logs/mlflow.db"
+  artifact_uri_rel: "logs/mlruns"
   experiment_name: "sber_car_subscription"
   experiments:
     eda: "EDA"
     preprocessing: "Preprocessing"
     features: "Features"
-    training: "Training"
+    train: "Training"
 
 # ============================================================
 # PLOTS (Настройки для EDA в ноутбуках)

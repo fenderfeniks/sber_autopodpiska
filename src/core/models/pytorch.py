@@ -190,7 +190,7 @@ class PyTorchWrapper(BaseModelWrapper):
 
     def save(self) -> str:
         """Нативное сохранение весов PyTorch модели (state_dict)."""
-        file_name = f"{self.model_cfg.name}_v{self.model_cfg.version}.pt"
+        file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}.pt"
         save_path = PROJECT_ROOT / self.cfg.paths.models_dir / file_name
         save_path.parent.mkdir(parents=True, exist_ok=True)
 

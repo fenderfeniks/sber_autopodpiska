@@ -1,6 +1,8 @@
 # configs/model/catboost.yaml
 name: "catboost"
-version: "0.1"
+model_version: "0.1.0"
+model_changelog: "Стартовый бейзлайн: дефолтные параметры, включен auto_class_weights для борьбы с дисбалансом"
+
 params:
   auto_class_weights: "Balanced"
   iterations: 1000

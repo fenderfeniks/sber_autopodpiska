@@ -4,7 +4,7 @@ import logging
 import pandas as pd
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from sklearn.utils.validation import check_is_fitted
 
@@ -34,9 +34,12 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         self.top_n_categories = getattr(self.cfg, 'top_n_categories', 12)
 
     def fit(self, X: pd.DataFrame, y=None):
+        
+        if hasattr(X, "columns"):
+            self.feature_names_in_ = np.array(X.columns, dtype=object)
+        
         self.fill_values_ = {}
         self.outlier_bounds_ = {}
-        self.top_categories_map_ = {}
 
         # Базовые копии для анализа статистик трейна
         X_fit = X.copy()
@@ -155,6 +158,34 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
                     X_transformed[col] = X_transformed[col].clip(lower=lower, upper=upper)
 
         return X_transformed
+    
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """
+        Согласовывает архитектуру препроцессора с конвейером scikit-learn.
+        Возвращает массив имен колонок, которые остались после фильтрации мусора.
+        """
+        # Проверяем, обучен ли трансформер
+        check_is_fitted(self, ['learned_drop_cols_'])
+        
+        # 1. Если имена переданы по цепочке от предыдущего шага, берем их.
+        # Если нет — используем фичи, которые пришли на вход во время fit.
+        if input_features is not None:
+            feature_names = list(input_features)
+        elif hasattr(self, 'feature_names_in_'):
+            feature_names = list(self.feature_names_in_)
+        else:
+            raise ValueError(
+                "Трансформер не имеет сохраненных feature_names_in_, "
+                "и параметр input_features не был передан."
+            )
+            
+        # 2. Исключаем из списка те колонки, которые мы задропали на этапе fit
+        final_features = [
+            col for col in feature_names 
+            if col not in self.learned_drop_cols_
+        ]
+        
+        return np.array(final_features, dtype=object)
 
 
 # ============================================================
@@ -166,10 +197,10 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
     Генерация бизнес-признаков, парсинг гео, расчет площади экрана.
     Данные по городам динамически подгружаются из Hydra-конфига и обрабатываются в transform.
     """
-    def __init__(self, config: DictConfig):
+    def __init__(self, config):
         self.cfg = config
         
-        # 1. Безопасно достаем конфигурацию по гео и девайсам через .get()
+        # 1. Безопасный разбор конфигурации
         tabular_cfg = config.get('data', {}).get('tabular', {})
         geo_cfg = tabular_cfg.get('geo', {})
         devices_cfg = tabular_cfg.get('devices', {})
@@ -177,27 +208,32 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         self.cis_countries = list(geo_cfg.get('cis', []))
         self.mobile_cats = list(devices_cfg.get('mobile_categories', ['mobile', 'tablet']))
 
-        # 2. Извлекаем справочник городов прямо из пути cfg.data.tabular
-        # Конвертируем в нативный dict для максимальной скорости работы .map() в Pandas
+        # 2. Извлекаем справочник городов
         city_markets_cfg = tabular_cfg.get('city_markets', {})
         self.city_markets = OmegaConf.to_container(city_markets_cfg, resolve=True) if city_markets_cfg else {}
         
-        # Загружаем дефолтный профиль на случай редких/пропущенных локаций
         defaults_cfg = tabular_cfg.get('defaults_fallback', {})
         self.city_defaults = OmegaConf.to_container(defaults_cfg, resolve=True) if defaults_cfg else {
             'has_metro': 0, 'population_2021': 100000, 'avg_salary_2021': 33000, 'cars_per_family': 0.65
         }
 
     def fit(self, X: pd.DataFrame, y=None):
-        # Нам не нужно собирать статистику, так как трансформации детерминированные
+        # Явно сохраняем имена колонок, которые пришли на вход
+        if hasattr(X, "columns"):
+            self.feature_names_in_ = np.array(X.columns, dtype=object)
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        logger.info("Запуск Feature Engineering пайплайна...")
+        # Проверяем, что fit был вызван
+        check_is_fitted(self)        
+        
         X_transformed = X.copy()
-
+        
+        # ПРИМЕЧАНИЕ: Для грязного бейзлайна весь блок генерации закомментирован.
+        # Как только начнешь развивать пайплайн — просто раскомментируй код ниже.
+        """
         # ==========================================================
-        # 1. СИНХРОНИЗАЦИЯ ЗАГЛУШЕК (Убираем конфликт Other)
+        # 1. СИНХРОНИЗАЦИЯ ЗАГЛУШЕК
         # ==========================================================
         for col in X_transformed.select_dtypes(include=['object']).columns:
             X_transformed[col] = X_transformed[col].replace(['(Other)', '(not set)', 'other'], np.nan)
@@ -235,7 +271,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
             X_transformed['is_mobile_device'] = 0
 
         # ==========================================================
-        # 4. КАЛЕНДАРНЫЕ И ВРЕМЕННЫЕ Признаки
+        # 4. КАЛЕНДАРНЫЕ И ВРЕМЕННЫЕ ПРИЗНАКИ
         # ==========================================================
         if 'visit_date' in X_transformed.columns:
             date_series = pd.to_datetime(X_transformed['visit_date'], errors='coerce')
@@ -266,13 +302,11 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
             )
 
         # ==========================================================
-        # 6. ВСТРОЕННОЕ ОБОГАЩЕНИЕ ДЕМОГРАФИЕЙ ГОРОДОВ (Из конфига)
+        # 6. ВСТРОЕННОЕ ОБОГАЩЕНИЕ ДЕМОГРАФИЕЙ ГОРОДОВ
         # ==========================================================
         if 'geo_city' in X_transformed.columns:
-            # Нормализуем строку города для точного мэтчинга с ключами YAML
             city_normalized = X_transformed['geo_city'].astype(str).str.lower().str.strip()
             
-            # Маппим признаки, используя кэшированный нативный python-dict
             X_transformed['has_metro'] = city_normalized.map(
                 lambda x: self.city_markets.get(x, {}).get('has_metro', self.city_defaults['has_metro'])
             )
@@ -286,14 +320,28 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
                 lambda x: self.city_markets.get(x, {}).get('cars_per_family', self.city_defaults['cars_per_family'])
             )
         else:
-            # Если колонки нет, заполняем дефолтными значениями
             X_transformed['has_metro'] = self.city_defaults['has_metro']
             X_transformed['city_population'] = self.city_defaults['population_2021']
             X_transformed['city_avg_salary'] = self.city_defaults['avg_salary_2021']
             X_transformed['city_cars_per_family'] = self.city_defaults['cars_per_family']
 
-        # 7. Фича-пропорция (интерес юзера к авто относительно среднего по городу)
+        # 7. Фича-пропорция
         if 'total_car_views' in X_transformed.columns:
             X_transformed['user_vs_city_car_interest'] = X_transformed['total_car_views'] / (X_transformed['city_cars_per_family'] + 1e-5)
-
+        """
+        
         return X_transformed
+
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Динамически возвращает схему колонок на выходе трансформера."""
+        # Определяем базовый входящий поток фичей
+        if input_features is not None:
+            features = list(input_features)
+        elif hasattr(self, 'feature_names_in_'):
+            features = list(self.feature_names_in_)
+        else:
+            features = []
+        
+        # Поскольку для "грязного бейзлайна" код transform закомментирован,
+        # новые колонки физически не создаются. Возвращаем то, что вошло.
+        return np.array(features, dtype=object)

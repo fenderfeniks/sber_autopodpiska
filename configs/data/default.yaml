@@ -9,6 +9,14 @@ sample_pct: 0.2
 # TABULAR FEATURES & PREPROCESSING (Для классического ML)
 # ============================================================
 tabular:
+  # --- ВЕРСИОНИРОВАНИЕ ДАННЫХ И ФИЧЕЙ ---
+  preprocessing_version: "1.0.0"  # Меняем, если изменился метод outlier или стратегии fill_value
+  preprocessing_changelog: "Базовая очистка: медианы для чисел, мода для категорий, IQR для выбросов"
+
+  features_version: "1.1.0"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
+  features_changelog: "Агреггирование метрик из ga_hits"
+
+
   target_col: "event_value"
   drop_cols: ["session_id", "client_id", "hits_before_target", "rn"]
   num_fill_strategy: "median"

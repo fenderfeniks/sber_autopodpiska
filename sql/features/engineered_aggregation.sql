@@ -27,29 +27,32 @@ parsed_hits AS (
     WHERE rn_hit = 1
 ),
 hits_features AS (
-    -- Шаг 3: Агрегируем чистые хиты до уровня сессии
+    -- Шаг 3: Агрегируем чистые хиты, отсекая "будущее" после таргета
     SELECT 
         session_id,
-        COUNT(hit_number) AS total_hits_count,
+        -- Считаем общее количество хитов ДО целевого действия
+        COUNT(CASE WHEN first_target_hit_number IS NULL OR hit_number <= first_target_hit_number THEN hit_number END) AS total_hits_count,
         MIN(hit_time_clean) AS first_hit_time_ms,
-        MAX(hit_time_clean) AS last_hit_time_ms,
+        -- Время последнего хита ДО или в момент таргета
+        MAX(CASE WHEN first_target_hit_number IS NULL OR hit_number <= first_target_hit_number THEN hit_time_clean END) AS last_hit_time_ms,
         
-        -- Фичи вовлеченности
-        COUNT(CASE WHEN hit_type = 'event' THEN 1 END) AS total_events_count,
-        COUNT(DISTINCT event_action) AS unique_event_actions,
+        COUNT(CASE WHEN hit_type = 'event' AND (first_target_hit_number IS NULL OR hit_number <= first_target_hit_number) THEN 1 END) AS total_events_count,
+        COUNT(DISTINCT CASE WHEN first_target_hit_number IS NULL OR hit_number <= first_target_hit_number THEN event_action END) AS unique_event_actions,
         
-        -- Фичи по машинам
-        COUNT(DISTINCT CASE WHEN car_id IS NOT NULL THEN car_id END) AS unique_cars_viewed,
-        COUNT(CASE WHEN car_id IS NOT NULL THEN 1 END) AS total_car_views,
+        -- Считаем просмотры машин строго ДО совершения подписки
+        COUNT(DISTINCT CASE WHEN car_id IS NOT NULL AND (first_target_hit_number IS NULL OR hit_number <= first_target_hit_number) THEN car_id END) AS unique_cars_viewed,
+        COUNT(CASE WHEN car_id IS NOT NULL AND (first_target_hit_number IS NULL OR hit_number <= first_target_hit_number) THEN 1 END) AS total_car_views,
         
-        -- Был ли первый хит просмотром машины (1 - да, 0 - нет)
         MAX(CASE WHEN hit_number = 1 AND car_id IS NOT NULL THEN 1 ELSE 0 END) AS is_first_hit_car_view,
         
-        -- Собираем таргет на сессию
         MAX(is_target_hit) AS agg_target,
-        -- Находим номер первого хита, где случился таргет
         MIN(CASE WHEN is_target_hit = 1 THEN hit_number END) AS first_target_hit_number
-    FROM parsed_hits
+    FROM (
+        -- Внутри подзапроса оконной функцией прокидываем номер таргет-хита на всю сессию вперед, чтобы видеть его при фильтрации
+        SELECT *,
+               MIN(CASE WHEN is_target_hit = 1 THEN hit_number END) OVER (PARTITION BY session_id) as first_target_hit_number
+        FROM parsed_hits
+    ) h_with_target
     GROUP BY session_id
 )
 -- Шаг 4: Джойним дедуплицированные сессии и агрегированные хиты

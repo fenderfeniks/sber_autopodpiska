@@ -40,13 +40,16 @@ class UniversalDataLoader:
         conn_string = f"postgresql://{db.user}:{quote_plus(db.password)}@{db.host}:{db.port}/{db.name}"
         return create_engine(conn_string)
 
-    def load_data(self, sql_file_name: str = "features/default_aggregation.sql", query_params: dict = None) -> pd.DataFrame:
+    def load_data(self, sql_file_name: str = "features/dirty_baseline_aggregation.sql", query_params: dict = None) -> pd.DataFrame:
         """
         Умный загрузчик. Читает SQL-файл, динамически подставляет таргет-действия 
         из Hydra-конфига, выполняет агрегацию в СУБД и возвращает DataFrame.
         """
         engine = self._get_db_engine()
-        
+
+        if self.cfg.paths.features_query_path:
+            sql_file_name = self.cfg.paths.features_query_path
+
         # 1. Читаем SQL-запрос из файла
         sql_path = PROJECT_ROOT / self.cfg.paths.sql_dir / sql_file_name
         logger.info(f"Чтение SQL-скрипта агрегации: {sql_path.name}")

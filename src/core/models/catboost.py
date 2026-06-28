@@ -57,7 +57,7 @@ class CatBoostWrapper(BaseModelWrapper):
             params_to_log = self.model.get_params()
             params_to_log.update({
                 "model_name": self.model_cfg.name,
-                "model_version": self.model_cfg.version,
+                "model_version": self.model_cfg.model_version,
                 "cat_features_count": len(cat_features)
             })
             tracker.log_params(params_to_log)
@@ -70,7 +70,7 @@ class CatBoostWrapper(BaseModelWrapper):
             eval_set = Pool(X_val, y_val, cat_features=cat_features)
 
         # 3. ОБУЧЕНИЕ С ПАРАМЕТРАМИ ИЗ КОНФИГА
-        logger.info(f"Обучение {self.model_cfg.name} (v{self.model_cfg.version})...")
+        logger.info(f"Обучение {self.model_cfg.name} (v{self.model_cfg.model_version})...")
 
         self.model.fit(
             train_pool,
@@ -96,7 +96,7 @@ class CatBoostWrapper(BaseModelWrapper):
     def save(self) -> str:
         """Нативное сохранение в формат CatBoost (.cbm)"""
         # Генерируем путь с использованием свойства file_extension
-        file_name = f"{self.model_cfg.name}_v{self.model_cfg.version}{self.file_extension}"
+        file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}{self.file_extension}"
         save_path = PROJECT_ROOT / self.cfg.paths.models_dir / file_name
 
         # Создаем папку, если ее нет

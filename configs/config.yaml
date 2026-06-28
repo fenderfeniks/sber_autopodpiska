@@ -22,7 +22,7 @@ task_type: "binary"       # binary | multiclass | regression
 
 metrics: ["AUC", "F1", "Accuracy"]
 loss_function: "Logloss"
-run_name: "baseline_v1"
+run_name: "p_v${data.tabular.preprocessing_version}__f_v${data.tabular.features_version}__m_v${model.model_version}"
 mode: "train"               # "train", "inference", "eval", "eda"
 seed: 42
 

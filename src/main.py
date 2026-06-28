@@ -105,7 +105,6 @@ def main(cfg: DictConfig):
     # ==========================================================
     elif mode == "evaluate":
         logger.info("Запуск оценки модели на тестовой выборке...")
-        # Предполагаем, что get_splits возвращает Train, Val, Test. Нам нужен Test.
         _, _, test_df = loader.get_splits(df)
 
         if test_df is None or test_df.empty:
@@ -113,7 +112,8 @@ def main(cfg: DictConfig):
 
         X_test, y_test = test_df.drop(columns=[target]), test_df[target]
 
-        with tracker.start_run(run_name=f"{cfg.model.name}_v{cfg.model.version}_eval"):
+        # --- ПРАВКА 1: Используем model_version ---
+        with tracker.start_run(run_name=f"{cfg.model.name}_v{cfg.model.model_version}_eval"):
             # Восстанавливаем пайплайн
             pipeline = MLPipeline(cfg)
             pipeline.load()
@@ -130,7 +130,7 @@ def main(cfg: DictConfig):
                 except NotImplementedError:
                     pass
 
-            # Считаем и логируем метрик
+            # Считаем и логируем метрики
             test_metrics = calculate_metrics(y_test, y_pred, cfg.task_type, y_prob)
 
             metrics_to_log = {f"test_{k}": v for k, v in test_metrics.items()}
@@ -146,7 +146,6 @@ def main(cfg: DictConfig):
     elif mode == "inference":
         logger.info("Запуск инференса на новых данных...")
 
-        # Для инференса таргета может не быть в датасете
         X_new = df.drop(columns=[target]) if target in df.columns else df
 
         pipeline = MLPipeline(cfg)
@@ -155,11 +154,8 @@ def main(cfg: DictConfig):
         # Сквозной предикт (очистка + прогноз)
         predictions = pipeline.predict(X_new)
 
-        # Формируем итоговый DataFrame с результатами
-        # (Если в данных был ID, его желательно оставить, чтобы заказчик понял, где чья строка)
         result_df = pd.DataFrame({"prediction": predictions})
 
-        # Если это классификация, добавляем вероятности
         if cfg.task_type in ['binary', 'multiclass']:
             X_new_clean = pipeline.preprocessor.transform(X_new)
             try:
@@ -170,8 +166,8 @@ def main(cfg: DictConfig):
             except NotImplementedError:
                 pass
 
-        # Сохраняем в CSV
-        output_path = PROJECT_ROOT / cfg.paths.data_dir / f"predictions_{cfg.model.name}_v{cfg.model.version}.csv"
+        # --- ПРАВКА 2: Используем model_version для пути сохранения ---
+        output_path = PROJECT_ROOT / cfg.paths.data_dir / f"predictions_{cfg.model.name}_v{cfg.model.model_version}.csv"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         result_df.to_csv(output_path, index=False)
 

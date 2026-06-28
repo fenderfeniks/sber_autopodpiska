@@ -2767,6 +2767,18 @@ wheels = [
 ]
 
 [[package]]
+name = "optuna-integration"
+version = "4.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "optuna" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/15/378c53a5fce6924be331ba7a7e0b3227f1d2ec8a0c8461c3d2475e5ba2e8/optuna_integration-4.9.0.tar.gz", hash = "sha256:c650615ea52259f518fee245be4f63be55c7495ffc7361d05e5054496ec427b8", size = 89927, upload-time = "2026-06-01T06:11:53.237Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/5b/05b6bc0e2fa1dd09d96f75d6cddfeaaaafde6028f89bbfb45e006a82a89a/optuna_integration-4.9.0-py3-none-any.whl", hash = "sha256:578dccd6657c12e0457750512ce718d4e3dab8730fa36dcd0b502eacfaa1e795", size = 103447, upload-time = "2026-06-01T06:11:51.831Z" },
+]
+
+[[package]]
 name = "orjson"
 version = "3.11.9"
 source = { registry = "https://pypi.org/simple" }
@@ -3545,6 +3557,7 @@ dependencies = [
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "optuna" },
+    { name = "optuna-integration" },
     { name = "pandas" },
     { name = "prometheus-client" },
     { name = "psycopg2-binary" },
@@ -3588,6 +3601,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "optuna", specifier = ">=3.3.0" },
+    { name = "optuna-integration", specifier = ">=4.9.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "prometheus-client", specifier = ">=0.20.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.12" },

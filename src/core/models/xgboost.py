@@ -61,7 +61,7 @@ class XGBoostWrapper(BaseModelWrapper):
             params_to_log = self.model.get_params()
             params_to_log.update({
                 "model_name": self.model_cfg.name,
-                "model_version": self.model_cfg.version
+                "model_version": self.model_cfg.model_version
             })
             tracker.log_params(params_to_log)
 
@@ -89,7 +89,7 @@ class XGBoostWrapper(BaseModelWrapper):
 
     def save(self) -> str:
         """Нативное сохранение XGBoost в универсальный формат UBJSON."""
-        file_name = f"{self.model_cfg.name}_v{self.model_cfg.version}.ubj"
+        file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}.ubj"
         save_path = PROJECT_ROOT / self.cfg.paths.models_dir / file_name
         save_path.parent.mkdir(parents=True, exist_ok=True)
 

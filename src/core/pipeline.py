@@ -106,24 +106,29 @@ class MLPipeline:
             models_dir = PROJECT_ROOT / self.cfg.paths.models_dir
             models_dir.mkdir(parents=True, exist_ok=True)
 
+            # --- ПРАВКА 1: Берём новые версии из раздельных конфигов ---
+            prep_ver = self.cfg.data.tabular.preprocessing_version
+            feat_ver = self.cfg.data.tabilar.features_version
+            model_ver = self.cfg.model.model_version
+
             # 1. Сохраняем схему фичей для FastAPI
             feature_types = X_train.dtypes.apply(lambda x: x.name).to_dict()
-            schema_name = f"feature_schema_v{self.cfg.model.version}.json"
+            schema_name = f"feature_schema_v{feat_ver}.json"
             schema_path = models_dir / schema_name
 
             with open(schema_path, "w") as f:
                 json.dump(feature_types, f, indent=4)
 
             self.tracker.log_dict(feature_types, schema_name, "schemas")
-            logger.info(f"Схема фичей сохранена в {schema_path}")
+            logger.info(f"Схема фичей сохранена in {schema_path}")
 
-            # 2. Сохраняем препроцессор
-            prep_path = models_dir / f"preprocessing_v{self.cfg.model.version}.pkl"
+            # 2. Сохраняем препроцессор (версия из data.tabular)
+            prep_path = models_dir / f"preprocessing_v{prep_ver}.pkl"
             joblib.dump(self.preprocessor, prep_path)
             self.tracker.log_artifact(str(prep_path), "preprocessing")
 
-            # 3. Сохраняем модель
-            model_path = self.model.save()
+            # 3. Сохраняем модель (версия из model)
+            model_path = self.model.save() # Внутри обертки CatBoostWrapper подхватится модель_версия
             self.tracker.log_artifact(model_path, "models")
 
             # 4. Логируем параметры из конфига
@@ -146,25 +151,31 @@ class MLPipeline:
     def load(self) -> "MLPipeline":
         """
         Восстанавливает состояние пайплайна из сохраненных артефактов на диске.
-        Использует версию модели из конфигурации.
+        Использует раздельные версии компонентов.
         """
-        version = self.cfg.model.version
-        logger.info(f"Загрузка артефактов пайплайна (версия {version})...")
+        # --- ПРАВКА 2: Извлекаем раздельные версии для загрузки ---
+        prep_ver = self.cfg.data.tabular.preprocessing_version
+        model_ver = self.cfg.model.model_version
+        
+        logger.info(f"Загрузка артефактов (Prep: v{prep_ver}, Model: v{model_ver})...")
 
         models_dir = PROJECT_ROOT / self.cfg.paths.models_dir
         if not models_dir.exists():
             raise FileNotFoundError(f"Директория с моделями не найдена: {models_dir}")
 
-        # 1. Загрузка препроцессора
-        prep_path = models_dir / f"preprocessing_v{version}.pkl"
+        # 1. Загрузка препроцессора по его личной версии
+        prep_path = models_dir / f"preprocessing_v{prep_ver}.pkl"
         if not prep_path.exists():
             raise FileNotFoundError(f"Препроцессор не найден: {prep_path}")
         self.preprocessor = joblib.load(prep_path)
-        logger.info("Препроцессор загружен.")
+        logger.info("Препроцессор успешно загружен.")
 
-        # 2. Инициализация пустой архитектуры модели и загрузка весов
+        # 2. Инициализация архитектуры модели и загрузка весов по версии модели
         self.model = get_model(self.cfg)
-        model_path = models_dir / f"{self.cfg.model.name}_v{version}{self.model.file_extension}"
+        model_path = models_dir / f"{self.cfg.model.name}_v{model_ver}{self.model.file_extension}"
+        if not model_path.exists():
+            raise FileNotFoundError(f"Модель не найдена: {model_path}")
+            
         self.model.load(str(model_path))
 
         logger.info("Пайплайн успешно восстановлен и готов к инференсу!")
