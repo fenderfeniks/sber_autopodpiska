@@ -4,22 +4,28 @@ import logging
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import pandas as pd
+from dotenv import load_dotenv
 
-# Импортируем только наши ООП-компоненты из ядра
-from core.data import UniversalDataLoader
-from core.pipeline import MLPipeline
-from core.tuner import OptunaTuner
-from core.utils import PROJECT_ROOT
-from core.artifacts import ArtifactManager
-from core.metrics import calculate_metrics
+# Импортируем только ООП-компоненты из ядра
+from src.core.data import UniversalDataLoader
+from src.core.pipeline import MLPipeline
+from src.core.tuner import OptunaTuner
+from src.core.utils import PROJECT_ROOT
+from src.core.artifacts import ArtifactManager
+from src.core.metrics import calculate_metrics
 
 from hydra.core.config_store import ConfigStore
-from core.config_schema import AppConfig
+from src.core.config_schema import AppConfig
+
+load_dotenv()
 
 cs = ConfigStore.instance()
-cs.store(name="config", node=AppConfig)
+cs.store(name="base_config", node=AppConfig)
 
 logger = logging.getLogger(__name__)
+logging.getLogger("PIL").setLevel(logging.WARNING)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+
 
 
 def setup_logging(cfg: DictConfig):
@@ -50,7 +56,7 @@ def main(cfg: DictConfig):
     logger.info(f"=== ЗАПУСК ORCHESTRATOR | РЕЖИМ: {mode.upper()} ===")
 
     # 2. НАСТРОЙКА ИНФРАСТРУКТУРЫ АРТЕФАКТОВ (Без прямого вызова MLflow)
-    tracker = ArtifactManager(cfg)
+    tracker = ArtifactManager(cfg, project_root=PROJECT_ROOT)
     experiment_name = cfg.logging.mlflow.experiments.get(mode, "default_experiment")
 
     # Явно указываем локальный путь для тяжелых артефактов и передаем трекеру
@@ -58,7 +64,7 @@ def main(cfg: DictConfig):
     tracker.set_experiment(experiment_name, artifact_location=local_artifact_repo)
 
     # 3. Загрузка данных (Общая для всех режимов)
-    loader = UniversalDataLoader(cfg)
+    loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT)
     df = loader.load_data()
     target = cfg.data.tabular.target_col
 
@@ -76,7 +82,7 @@ def main(cfg: DictConfig):
 
         # Запускаем через контекстный менеджер трекера
         with tracker.start_run(run_name=cfg.run_name):
-            pipeline = MLPipeline(cfg)
+            pipeline = MLPipeline(cfg, tracker=tracker, project_root=PROJECT_ROOT)
             pipeline.train(X_train, y_train, X_val, y_val, save_artifacts=True)
 
     # ==========================================================
@@ -89,15 +95,27 @@ def main(cfg: DictConfig):
         X_val, y_val = val_df.drop(columns=[target]), val_df[target]
 
         with tracker.start_run(run_name=f"{cfg.run_name}_optuna"):
-            tuner = OptunaTuner(cfg)
+            tuner = OptunaTuner(cfg, tracker=tracker, project_root=PROJECT_ROOT)
+            
             best_params = tuner.tune(X_train, y_train, X_val, y_val, tracker=tracker)
 
-            logger.info("Тюнинг завершен. Обучение финальной модели...")
+            logger.info(f"Тюнинг завершен. Лучшие параметры найдены: {best_params}")
+            logger.info("Обучение финальной модели...")
+            
+            # 1. Обновляем конфиг в памяти
             for key, value in best_params.items():
-                OmegaConf.update(cfg, f"model.params.{key}", value, merge=True)
+                OmegaConf.update(cfg, f"model.params.{key}", value, force_add=True)
 
-            # Передаем эстафету пайплайну
-            pipeline = MLPipeline(cfg)
+            # 2. ЖЕЛЕЗОБЕТОННЫЙ ФИКС: Передаем эстафету пайплайну
+            pipeline = MLPipeline(cfg, tracker=tracker, project_root=PROJECT_ROOT)
+            
+            # Перезаписываем параметры СТРОГО во внутреннем словаре пайплайна, 
+            # из которого твой код инициализирует CatBoostClassifier
+            if hasattr(pipeline, 'cfg') and 'model' in pipeline.cfg:
+                for key, value in best_params.items():
+                    pipeline.cfg.model.params[key] = value
+
+            # Обучаем финальную модель (теперь она ТОЧНО возьмет лучшие параметры!)
             pipeline.train(X_train, y_train, X_val, y_val, save_artifacts=True)
 
     # ==========================================================
@@ -115,7 +133,7 @@ def main(cfg: DictConfig):
         # --- ПРАВКА 1: Используем model_version ---
         with tracker.start_run(run_name=f"{cfg.model.name}_v{cfg.model.model_version}_eval"):
             # Восстанавливаем пайплайн
-            pipeline = MLPipeline(cfg)
+            pipeline = MLPipeline(cfg, tracker=tracker, project_root=PROJECT_ROOT)
             pipeline.load()
 
             # Делаем предсказания
@@ -148,7 +166,7 @@ def main(cfg: DictConfig):
 
         X_new = df.drop(columns=[target]) if target in df.columns else df
 
-        pipeline = MLPipeline(cfg)
+        pipeline = MLPipeline(cfg, tracker=tracker, project_root=PROJECT_ROOT)
         pipeline.load()
 
         # Сквозной предикт (очистка + прогноз)

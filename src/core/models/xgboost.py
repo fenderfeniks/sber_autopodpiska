@@ -118,3 +118,27 @@ class XGBoostWrapper(BaseModelWrapper):
         if hasattr(self.model, 'best_score'):
             return self.model.best_score
         return 0.0
+    
+    def get_feature_importance(self, X: pd.DataFrame = None) -> pd.DataFrame:
+        """Возвращает DataFrame важности признаков для XGBoost."""
+        if hasattr(self.model, 'feature_importances_'):
+            importances = self.model.feature_importances_
+        else:
+            # Фолбек на случай нативного бустера
+            try:
+                booster = self.model.get_booster()
+                score = booster.get_score(importance_type='weight')
+                # get_score возвращает словарь, преобразуем его под колонки X
+                importances = [score.get(col, 0) for col in X.columns] if X is not None else list(score.values())
+            except Exception:
+                logger.warning("Не удалось извлечь важность признаков из XGBoost.")
+                importances = np.zeros(len(X.columns) if X is not None else 0)
+
+        feature_names = X.columns if X is not None else [f"feature_{i}" for i in range(len(importances))]
+
+        fi_df = pd.DataFrame({
+            'Feature': feature_names,
+            'Importance': importances
+        }).sort_values(by='Importance', ascending=False).reset_index(drop=True)
+
+        return fi_df

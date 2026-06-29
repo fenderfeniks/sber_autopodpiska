@@ -44,7 +44,7 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         
         # Базовые копии для анализа статистик трейна
         X_fit = X.copy()
-        
+
         # 1. Расчет статистик для умной импутации площади экрана по брендам
         self.global_screen_area_median_ = X_fit['screen_area'].median() if 'screen_area' in X_fit.columns else 0
         if 'device_brand' in X_fit.columns and 'screen_area' in X_fit.columns:
@@ -54,7 +54,7 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
             self.brand_screen_medians_ = {}
 
         # Исключаем технические колонки из анализа пропусков и констант
-        technical_cols = self.drop_cols + ['session_id', 'client_id', 'visit_date', 'visit_time', 'device_screen_resolution']
+        technical_cols = self.drop_cols + ['session_id', 'client_id', 'visit_date', 'visit_time'] #, 'device_screen_resolution']
         X_fit = X_fit.drop(columns=technical_cols, errors='ignore')
 
         # ==========================================================
@@ -232,7 +232,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         
         # ПРИМЕЧАНИЕ: Для грязного бейзлайна весь блок генерации закомментирован.
         # Как только начнешь развивать пайплайн — просто раскомментируй код ниже.
-        """
+        
         # ==========================================================
         # 1. СИНХРОНИЗАЦИЯ ЗАГЛУШЕК
         # ==========================================================
@@ -252,7 +252,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
                 X_transformed['screen_area'] = np.nan
         else:
             X_transformed['screen_area'] = np.nan
-
+        
         # ==========================================================
         # 3. ГЕО-ЗОНЫ И МОБИЛЬНОСТЬ
         # ==========================================================
@@ -270,7 +270,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
             X_transformed['is_mobile_device'] = X_transformed['device_category'].isin(self.mobile_cats).astype(int)
         else:
             X_transformed['is_mobile_device'] = 0
-
+        
         # ==========================================================
         # 4. КАЛЕНДАРНЫЕ И ВРЕМЕННЫЕ ПРИЗНАКИ
         # ==========================================================
@@ -284,7 +284,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
             if hours.isnull().all():
                 hours = pd.to_numeric(X_transformed['visit_time'], errors='coerce').fillna(12)
             X_transformed['is_night'] = hours.isin([23, 0, 1, 2, 3, 4, 5]).astype(int)
-
+        
         # ==========================================================
         # 5. МАТЕМАТИКА СКОРОСТИ КЛИКОВ И КРОССЫ
         # ==========================================================
@@ -301,7 +301,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
             X_transformed['dev_category_brand'] = (
                 X_transformed['device_category'].astype(str) + "_" + X_transformed['device_brand'].astype(str)
             )
-
+        
         # ==========================================================
         # 6. ВСТРОЕННОЕ ОБОГАЩЕНИЕ ДЕМОГРАФИЕЙ ГОРОДОВ
         # ==========================================================
@@ -329,7 +329,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         # 7. Фича-пропорция
         if 'total_car_views' in X_transformed.columns:
             X_transformed['user_vs_city_car_interest'] = X_transformed['total_car_views'] / (X_transformed['city_cars_per_family'] + 1e-5)
-        """
+
         
         return X_transformed
 

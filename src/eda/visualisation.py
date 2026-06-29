@@ -3,18 +3,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
-from core.models.base import BaseModelWrapper
+from src.core.models.base import BaseModelWrapper
 from pathlib import Path
-from core.utils import load_hydra_config, PROJECT_ROOT
 
-cfg = load_hydra_config()
 
-task_type = cfg.get('task_type', '') # Безопасно берем из корня конфига
-run_name = cfg.run_name
-reports_dir = Path(PROJECT_ROOT / cfg.paths.reports_dir / run_name)
-reports_dir.mkdir(exist_ok=True)
-
-def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: pd.DataFrame):
+def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: pd.DataFrame, cfg, project_root:Path):
     """Визуализирует общее качество предсказаний на основе типа задачи (task_type).
 
     Для классификации (binary/multiclass) строит матрицу ошибок (Confusion Matrix).
@@ -25,6 +18,9 @@ def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: 
         error_df (pd.DataFrame): Сырой датафрейм валидации с колонками ['Actual', 'Predicted'].
         X_val_clean (pd.DataFrame): Очищенная матрица признаков, переданная в модель.
     """
+    task_type = cfg.task_type
+    run_name = cfg.run_name
+    reports_dir = Path(project_root / cfg.paths.reports_dir / run_name)
     # ============================================================================
     # ВЕТКА 1: БИНАРНАЯ ИЛИ МНОГОКЛАССОВАЯ КЛАССИФИКАЦИЯ (Матрица ошибок)
     # ============================================================================
@@ -37,13 +33,14 @@ def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: 
         # Строим красивую матрицу ошибок (Confusion Matrix)
         cm = confusion_matrix(error_df['Actual'], error_df['Predicted'])
         
-        plt.figure(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=(8, 6))
         # Если классов много, аннотации автоматически адаптируются
         sns.heatmap(
             cm, 
             annot=True, 
             fmt='d', 
             cmap='Blues', 
+            ax=ax,
             xticklabels=np.unique(error_df['Actual']), 
             yticklabels=np.unique(error_df['Actual'])
         )
@@ -82,12 +79,13 @@ def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: 
     plt.tight_layout()
 
     output_plot_path = reports_dir / f"error_analyse_{cfg.data.tabular.preprocessing_version}.png"
-    plt.savefig(output_plot_path, dpi=150, bbox_inches='tight')
-    plt.show()
+    fig.savefig(output_plot_path, dpi=150, bbox_inches='tight')
+    #plt.show()
     
+    return fig
 
     
-def search_trends( error_df: pd.DataFrame, top_n_features:int = 6, top_k_categories:int = 15):
+def search_trends( error_df: pd.DataFrame, cfg, project_root, top_n_features:int = 6, top_k_categories:int = 15):
     """Ищет скрытые тренды и аномалии в ошибках модели в разрезе категориальных признаков.
 
     Генерирует комплексное графическое полотно. Для классификации визуализирует
@@ -99,6 +97,9 @@ def search_trends( error_df: pd.DataFrame, top_n_features:int = 6, top_k_categor
         top_n_features (int): Количество анализируемых признаков (размерность сетки графиков).
         top_k_categories (int): Максимальное количество категорий внутри одной фичи для вывода.
     """
+    task_type = cfg.task_type
+    run_name = cfg.run_name
+    reports_dir = Path(project_root / cfg.paths.reports_dir / run_name)
     # Исключаем служебные метки и задропленные в конфигурации фичи
     exclude_cols = ['Actual', 'Predicted', 'Is_Error', 'Probability', 'Prediction_Type', 
                     'Error', 'AbsError', 'Confidence_Mistake', 'session_id', 'client_id', 'Is_Worst']
@@ -191,13 +192,15 @@ def search_trends( error_df: pd.DataFrame, top_n_features:int = 6, top_k_categor
         plt.tight_layout()
         output_plot_path = reports_dir / f"features_error_trends_v{cfg.data.tabular.preprocessing_version}.png"
         plt.savefig(output_plot_path, dpi=150, bbox_inches='tight')
-        plt.show()
+        #plt.show()
         
         print(f"✅ Сводное полотно трендов успешно сохранено в: {output_plot_path}")
 
+        return fig
 
 
-def worst_preds(error_df: pd.DataFrame, top_features_count:int = 5):
+
+def worst_preds(error_df: pd.DataFrame, cfg, project_root, top_features_count:int = 5):
     """Выполняет глубокий профайлинг и досье для худших предсказаний модели.
 
     Для классификации выделяет топ-5 False Positive (самые уверенные ошибки) и топ-5
@@ -209,6 +212,10 @@ def worst_preds(error_df: pd.DataFrame, top_features_count:int = 5):
         error_df (pd.DataFrame): Датафрейм анализа ошибок.
         top_features_count (int): Количество бизнес-фичей, выводимых в текстовое досье объектов.
     """
+    task_type = cfg.task_type
+    run_name = cfg.run_name
+    reports_dir = Path(project_root / cfg.paths.reports_dir / run_name)
+
     print(f"=== ЗАПУСК ЛОКАЛЬНОГО АНАЛИЗА ОШИБОК | РЕЖИМ: {task_type.upper()} ===")
 
     # Автоматически определяем доступные реальные фичи (исключаем служебные метки и дропы)
@@ -251,7 +258,7 @@ def worst_preds(error_df: pd.DataFrame, top_features_count:int = 5):
             
             plt.tight_layout()
             plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-            plt.show()
+            #plt.show()
 
             # 2. Формируем текстовый профиль для классификации
             report_text = f"=== ОТЧЕТ ПО ХУДШИМ ОШИБКАМ КЛАССИФИКАЦИИ ===\n"
@@ -304,7 +311,7 @@ def worst_preds(error_df: pd.DataFrame, top_features_count:int = 5):
         
         plt.tight_layout()
         plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-        plt.show()
+        #plt.show()
 
         # 2. Формируем текстовый профиль для регрессии
         report_text = f"=== ОТЧЕТ ПО КАТАСТРОФИЧЕСКИМ ВЫБРОСАМ РЕГРЕССИИ ===\n"
@@ -331,3 +338,46 @@ def worst_preds(error_df: pd.DataFrame, top_features_count:int = 5):
     print(f"✅ Локальные отчеты успешно сгенерированы и сохранены:")
     print(f"   - Графики сохранены в: {plot_path}")
     print(f"   - Текстовое досье сохранено в: {text_path}")
+
+    return fig
+
+
+
+def feature_importance(fi_df:pd.DataFrame, cfg, project_root, features_count:int = 15):
+    figures = {}
+    task_type = cfg.task_type
+    run_name = cfg.run_name
+    reports_dir = Path(project_root / cfg.paths.reports_dir / run_name)
+
+    fig_top = plt.figure()
+    sns.barplot(
+        data=fi_df.head(features_count),  # Показываем топ-15
+        x='Importance',
+        y='Feature',
+        palette='viridis',
+        alpha=cfg.logging.plots.alpha
+    )
+    plt.title(f"Топ-15 самых важных признаков ({cfg.model.name})")
+    plt.tight_layout()
+    figures['top_importance'] = fig_top
+    output_plot_path = reports_dir / f"features_importance_top{features_count}_{cfg.data.tabular.preprocessing_version}.png"
+    plt.savefig(output_plot_path, dpi=150, bbox_inches='tight')
+
+    worst_features = fi_df.sort_values(by='Importance', ascending=True).head(features_count)
+
+    fig_worst = plt.figure()
+    sns.barplot(
+        data=worst_features,  # Теперь здесь лежат самые бесполезные фичи сверху вниз
+        x='Importance',
+        y='Feature',
+        palette='viridis',
+        alpha=cfg.logging.plots.alpha
+    )
+    plt.title(f"Топ-{features_count} самых худших признаков ({cfg.model.name})")
+    plt.tight_layout()
+    figures['worst_importance'] = fig_worst
+    output_plot_path = reports_dir / f"features_importance_worst_{features_count}_{cfg.data.tabular.preprocessing_version}.png"
+    plt.savefig(output_plot_path, dpi=150, bbox_inches='tight')
+    #plt.show()
+
+    return figures

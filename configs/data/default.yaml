@@ -10,24 +10,29 @@ sample_pct: 0.2
 # ============================================================
 tabular:
   # --- ВЕРСИОНИРОВАНИЕ ДАННЫХ И ФИЧЕЙ ---
-  preprocessing_version: "1.0.0"  # Меняем, если изменился метод outlier или стратегии fill_value
-  preprocessing_changelog: "Базовая очистка: медианы для чисел, мода для категорий, IQR для выбросов"
+  preprocessing_version: "1.1.0"  # Меняем, если изменился метод outlier или стратегии fill_value
+  preprocessing_changelog: "Базовая очистка: медианы для чисел, мода для категорий, IQR для выбросов + удаление пустых колонок и строк Добавлен умное заполнение по мода и медиана по брендам"
 
-  features_version: "1.1.0"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
-  features_changelog: "Агреггирование метрик из ga_hits"
+  features_version: "1.0.5"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
+  features_changelog: "Демография городов"
+
+  aggrigation_version: "1.2.0"
+  aggrigation_changelog: "произведена аггрегация в соответствии с engineering_aggregation.sql добавлены фичи на энтропию поведения плюс продолжается борьба с утечкой данных"
 
 
   target_col: "event_value"
-  drop_cols: ["session_id", "client_id", "hits_before_target", "rn"]
+  drop_cols: ["session_id", "client_id", "rn"]
   num_fill_strategy: "median"
   cat_fill_strategy: "mode"
   outlier_method: "iqr"
   outlier_threshold: 1.5
   skip_imputation_cols: []
+  top_n_categories: 20
 
   # --- SMART DROPPING ---
   max_missing_pct: 0.90
   max_constant_pct: 0.99
+  max_row_missing_pct: 0.5
 
   # ============================================================
   # БИЗНЕС-ПРАВИЛА И КЛЮЧИ ДЛЯ FEATURE ENGINEERING

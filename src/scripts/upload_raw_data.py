@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 import pandas as pd
 from sqlalchemy import create_engine
 from urllib.parse import quote_plus
-from core.utils import PROJECT_ROOT
+from src.core.utils import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 

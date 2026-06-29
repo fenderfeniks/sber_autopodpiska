@@ -125,3 +125,22 @@ class LightGBMWrapper(BaseModelWrapper):
                 return value
         logger.warning(f"Метрика '{metric_name}' не найдена в {list(val_scores.keys())}. Берём первую.")
         return next(iter(val_scores.values()), 0.0)
+    
+    def get_feature_importance(self, X: pd.DataFrame = None) -> pd.DataFrame:
+        """Возвращает DataFrame важности признаков для LightGBM."""
+
+        # Проверяем, обучена ли модель
+        if hasattr(self.model, 'feature_importances_'):
+            importances = self.model.feature_importances_
+        else:
+            logger.warning("Модель LightGBM еще не обучена или не поддерживает feature_importances_.")
+            importances = np.zeros(len(X.columns) if X is not None else 0)
+
+        feature_names = X.columns if X is not None else [f"feature_{i}" for i in range(len(importances))]
+
+        fi_df = pd.DataFrame({
+            'Feature': feature_names,
+            'Importance': importances
+        }).sort_values(by='Importance', ascending=False).reset_index(drop=True)
+
+        return fi_df

@@ -23,4 +23,6 @@ raw_sessions_file: "ga_sessions.csv"
 raw_hits_file: "ga_hits.csv"
 
 # --- Пусть до запроса к SQL
-features_query_path: "features/dirty_baseline_aggregation.sql"
+features_query_path: "features/engineered_aggregation.sql"
+# dirty_baseline_aggregation.sql
+# engineered_aggregation.sql

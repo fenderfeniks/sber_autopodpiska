@@ -12,10 +12,10 @@ from prometheus_client import make_asgi_app, Counter, Histogram
 # Pydantic схемы (предполагаем, что они лежат в api/schemas.py)
 from api.schemas import PredictionRequest, PredictionResponse
 from api.dependencies import verify_api_key, get_ml_model, get_preprocessor
-from core.utils import load_hydra_config, PROJECT_ROOT
+from src.core.utils import load_hydra_config, PROJECT_ROOT
 
 # Импорты движка
-from core.models import get_model
+from src.core.models import get_model
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ try:
     # Загружаем конфиг один раз при старте модуля
     cfg = load_hydra_config("config")
     API_TITLE = cfg.project_name
-    MODEL_VERSION = cfg.model.version
+    MODEL_VERSION = cfg.model.model_version
     API_VERSION = MODEL_VERSION  # Поменять если добавить в конфиг версию API
     API_DESC = f"Микросервис инференса. Модель: {cfg.model.name}"
     HAS_CONFIG = True

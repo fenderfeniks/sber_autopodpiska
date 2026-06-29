@@ -11,15 +11,12 @@ from sklearn.metrics import (
     r2_score,
     classification_report
 )
-from core.utils import load_hydra_config
 
 
-cfg = load_hydra_config()
-task_type = cfg.get('task_type', '')
 logger = logging.getLogger(__name__)
 
 
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray = None) -> dict:
+def calculate_metrics(y_true, y_pred, y_prob=None, task_type: str = "binary") -> dict:
     """
     Универсальная считалка метрик для любой модели.
 
@@ -64,4 +61,5 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray
         metrics['mae'] = round(mean_absolute_error(y_true, y_pred), 4)
         metrics['r2'] = round(r2_score(y_true, y_pred), 4)
 
+    print(metrics)
     return metrics

@@ -228,3 +228,45 @@ class PyTorchWrapper(BaseModelWrapper):
     def get_best_val_score(self, metric_name: str = None) -> float:
         """Единый интерфейс для Optuna для получения метрики валидации."""
         return getattr(self, 'best_val_score', 0.0)
+    
+    def get_feature_importance(self, X: pd.DataFrame = None) -> pd.DataFrame:
+        """
+        Возвращает DataFrame важности признаков для PyTorch модели 
+        на основе средних абсолютных весов первого линейного слоя.
+        """
+        if X is None:
+            logger.warning("Для расчета важности признаков PyTorch модели необходимо передать X.")
+            return pd.DataFrame(columns=['Feature', 'Importance'])
+
+        try:
+            # 1. Ищем первый линейный слой в модели
+            first_layer = None
+            for module in self.model.modules():
+                if isinstance(module, torch.nn.Linear):
+                    first_layer = module
+                    break
+
+            if first_layer is not None:
+                # weight имеет размерность [out_features, in_features]
+                # Берем абсолютные значения весов и усредняем по выходам
+                weights = torch.abs(first_layer.weight.data).cpu().numpy()
+                importances = np.mean(weights, axis=0)
+                
+                # Защита на случай, если размерность слоя не совпадает с X (например, из-за эмбеддингов)
+                if len(importances) != len(X.columns):
+                    logger.warning("Размерность первого слоя сети не совпадает с количеством фичей (возможно, используются эмбеддинги).")
+                    importances = np.zeros(len(X.columns))
+            else:
+                logger.warning("В PyTorch модели не найден Linear слой для извлечения весов.")
+                importances = np.zeros(len(X.columns))
+
+        except Exception as e:
+            logger.warning(f"Ошибка при извлечении весов из PyTorch модели: {e}")
+            importances = np.zeros(len(X.columns))
+
+        fi_df = pd.DataFrame({
+            'Feature': X.columns,
+            'Importance': importances
+        }).sort_values(by='Importance', ascending=False).reset_index(drop=True)
+
+        return fi_df

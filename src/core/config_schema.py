@@ -24,28 +24,43 @@ class DvcConfig:
 
 @dataclass
 class PathsConfig:
-    # Базовые
+    # Твои старые базовые поля
     data_dir: str
     models_dir: str
     reports_dir: str
     logs_dir: str
     src_dir: str
     sql_dir: str
-
-    # Поддиректории
+    
     raw_dir: str
     processed_dir: str
     features_dir: str
-
-    # Файлы
+    
     data_file_name: str
-    table_name: Optional[str] = None
 
+    table_name: str
+    raw_sessions_table: str
+    raw_hits_table: str
+    
+    raw_sessions_file: str
+    raw_hits_file: str
+    
+    features_query_path: str
+    
 
 # --- Блоки Данных ---
 
 @dataclass
 class TabularDataConfig:
+    preprocessing_version: str
+    features_version: str
+    
+    preprocessing_changelog: str
+    features_changelog: str
+
+    aggrigation_version: str
+    aggrigation_changelog: str
+
     target_col: str
     drop_cols: List[str]
 
@@ -54,10 +69,18 @@ class TabularDataConfig:
 
     outlier_method: str
     outlier_threshold: float
-
+    missing_target_value: int
+    target_event_actions: List[str]
+    organic_mediums: List[str]
+    social_ad_sources: List[str]
+    geo: Dict[str, Any]
+    devices: Dict[str, Any]
+    city_markets: Dict[Any, Any]
+    defaults_fallback: Dict[Any, Any]
     max_missing_pct: float = 0.90
     max_constant_pct: float = 0.99
     max_row_missing_pct: float = 0.50
+    top_n_categories: int = 20
     skip_imputation_cols: List[str] = field(default_factory=list)
 
 
@@ -75,7 +98,8 @@ class DataConfig:
 @dataclass
 class ModelConfig:
     name: str
-    version: str  # Версионирование (например: "1.0.0")
+    model_version: str
+    model_changelog: str
     # Гиперпараметры могут быть любыми (CatBoost, нейронка и т.д.),
     # поэтому оставляем гибкий словарь
     params: Dict[str, Any] = field(default_factory=dict)
@@ -127,8 +151,9 @@ class TrainingConfig:
 @dataclass
 class MlflowConfig:
     tracking_uri: str
+    artifact_uri_rel: str
+    experiment_name: str
     experiments: Dict[str, str]
-    tags: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

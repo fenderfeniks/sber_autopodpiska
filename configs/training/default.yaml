@@ -2,7 +2,6 @@
 # HARDWARE & COMPUTE — настройки ресурсов
 # ============================================================
 device: "auto"              # "cuda", "cpu", "mps"
-precision: "fp32"           # "fp32", "fp16", "bf16" (bf16 топ для новых GPU и NLP)
 num_workers: 4              # Для PyTorch DataLoader
 pin_memory: true
 
@@ -34,5 +33,6 @@ dl:
 # ============================================================
 
 optuna:
-  n_trials: 50
+  n_trials: 100
   direction: "maximize"
+  sampler: "tpe"

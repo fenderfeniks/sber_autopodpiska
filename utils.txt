@@ -1,6 +1,3 @@
-# mlflow
-mlflow ui --backend-store-uri sqlite:///logs/mlflow.db --default-artifact-root ./logs/mlruns
-
 # uv
 uv venv
 uv sync --no-dev (сборка докер образа)(core+api)

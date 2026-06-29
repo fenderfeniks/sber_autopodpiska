@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pandas as pd
 from omegaconf import DictConfig
 from hydra import initialize_config_dir, compose
 from hydra.core.global_hydra import GlobalHydra
 from hydra.core.config_store import ConfigStore
-from src.core.config_schema import AppConfig
 import functools
+
+from src.core.config_schema import AppConfig
+
 
 def get_project_root() -> Path:
     """
@@ -30,7 +31,9 @@ PROJECT_ROOT = get_project_root()
 @functools.lru_cache(maxsize=1)
 def load_hydra_config(config_name: str = "config") -> DictConfig:
     """Загружает конфиг один раз, валидирует по схеме AppConfig и кеширует его."""
-    
+    # Защита: если Hydra уже инициализирована, сбрасываем её инстанс
+    if GlobalHydra.instance().is_initialized():
+        GlobalHydra.instance().clear()
     # Регистрируем схему типов в глобальном хранилище Hydra
     cs = ConfigStore.instance()
     cs.store(name="config_schema", node=AppConfig)
@@ -52,12 +55,3 @@ def clear_config_cache():
     """Сбрасывает кэш конфига (использовать только в Unit-тестах)."""
     load_hydra_config.cache_clear()
     GlobalHydra.instance().clear()
-
-def collapse_rare_categories(df, columns, top_n=10):
-    df_copy = df.copy()
-    for col in columns:
-        # Находим топ популярных значений
-        top_values = df_copy[col].value_counts().index[:top_n]
-        # Все, что не вошло в топ, заменяем на 'other'
-        df_copy[col] = df_copy[col].where(df_copy[col].isin(top_values), 'other')
-    return df_copy

@@ -18,6 +18,7 @@ mlflow:
     preprocessing: "Preprocessing"
     features: "Features"
     train: "Training"
+    tune: "Tuning"
 
 # ============================================================
 # PLOTS (Настройки для EDA в ноутбуках)

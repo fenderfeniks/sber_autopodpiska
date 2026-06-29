@@ -1,20 +1,22 @@
-# Определяем интерпретатор Python и команду запуска тестов
+# ============================================================
+# КОНФИГУРАЦИЯ ИНТЕРПРЕТАТОРОВ
+# ============================================================
 PYTHON = python
-PYTEST = python -m pytest
+PYTEST = pytest
 
 .PHONY: help venv install test test-unit test-integration run-train run-tune clean
 
 # Команда по умолчанию (показывает список доступных команд)
 help:
 	@echo "Доступные команды для автоматизации проекта:"
-	@echo "  make venv             - Создать виртуальное окружение venv"
-	@echo "  make install          - Установить зависимости из requirements.txt"
-	@echo "  make test             - Запустить ВСЕ тесты (unit + integration)"
-	@echo "  make test-unit        - Запустить только быстрые юнит-тесты"
-	@echo "  make test-integration - Запустить тяжелые интеграционные тесты"
-	@echo "  make run-train        - Запустить обучение модели (mode=train)"
-	@echo "  make run-tune         - Запустить подбор гиперпараметров (mode=tune)"
-	@echo "  make clean            - Полная очистка проекта от кэша, pyc файлов и логов тестов"
+	@echo "  make venv              - Создать виртуальное окружение venv"
+	@echo "  make install           - Установить зависимости и зарегистрировать пакет"
+	@echo "  make test              - Запустить ВСЕ тесты (unit + integration)"
+	@echo "  make test-unit         - Запустить только быстрые юнит-тесты"
+	@echo "  make test-integration  - Запустить тяжелые интеграционные тесты"
+	@echo "  make run-train         - Запустить обучение модели (mode=train)"
+	@echo "  make run-tune          - Запустить подбор гиперпараметров (mode=tune)"
+	@echo "  make clean             - Полная очистка проекта от кэша, pyc файлов и логов"
 
 # ============================================================
 # ОКРУЖЕНИЕ И ЗАВИСИМОСТИ
@@ -27,7 +29,13 @@ venv:
 
 install:
 	$(PYTHON) -m pip install --upgrade pip
-    pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev]"
+
+# ============================================================
+# СЕРВИСЫ
+# ============================================================
+mlflow:
+	mlflow ui --backend-store-uri sqlite:///logs/mlflow.db --default-artifact-root ./logs/mlruns
 
 # ============================================================
 # ТЕСТИРОВАНИЕ (Pytest)
@@ -42,20 +50,20 @@ test-integration:
 	$(PYTEST) tests/integration/ -v
 
 # ============================================================
-# ЗАПУСК ПРОЕКТА (Оркестратор main.py)
+# ЗАПУСК ПРОЕКТА (Через контекст модуля пакета)
 # ============================================================
 run-train:
-	$(PYTHON) main.py mode=train
+	$(PYTHON) -m main mode=train
 
 run-tune:
-	$(PYTHON) main.py mode=tune
+	$(PYTHON) -m main mode=tune
 
 # ============================================================
-# ОЧИСТКА ПРОЕКТА
+# ОЧИСТКА ПРОЕКТА (Кроссплатформенная)
 # ============================================================
 clean:
 	@echo "Очистка кэша и временных файлов..."
-	rm -rf .pytest_cache outputs multirun .hydra catboost_info
-	find . -name "__pycache__" -type d -exec rm -rf {} +
-	find . -name "*.pyc" -type f -delete
+	$(PYTHON) -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in [pathlib.Path('.pytest_cache'), pathlib.Path('outputs'), pathlib.Path('multirun'), pathlib.Path('.hydra'), pathlib.Path('catboost_info')] if p.exists()]"
+	$(PYTHON) -c "import pathlib; [p.rmdir() for p in pathlib.Path('.').rglob('__pycache__') if p.is_dir()]"
+	$(PYTHON) -c "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.pyc') if p.is_file()]"
 	@echo "Проект полностью очищен!"

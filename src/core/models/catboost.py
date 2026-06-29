@@ -138,3 +138,22 @@ class CatBoostWrapper(BaseModelWrapper):
         # Fallback: первая доступная метрика
         logger.warning(f"Метрика '{metric_name}' не найдена в {list(val_scores.keys())}. Берём первую.")
         return next(iter(val_scores.values()), 0.0)
+    
+    def get_feature_importance(self, X: pd.DataFrame = None) -> pd.DataFrame:
+        """
+        Возвращает DataFrame с колонками ['Feature', 'Importance'], 
+        отсортированный по убыванию важности признаков.
+        """      
+        # Получаем значения важности из нативной модели CatBoost
+        importances = self.model.get_feature_importance()
+        
+        # Так как CatBoost возвращает просто массив чисел, 
+        # нам нужны имена колонок, чтобы сопоставить их
+        feature_names = X.columns if X is not None else [f"feature_{i}" for i in range(len(importances))]
+        
+        fi_df = pd.DataFrame({
+            'Feature': feature_names,
+            'Importance': importances
+        }).sort_values(by='Importance', ascending=False).reset_index(drop=True)
+        
+        return fi_df

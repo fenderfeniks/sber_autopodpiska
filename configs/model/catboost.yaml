@@ -1,15 +1,34 @@
-# configs/model/catboost.yaml
 name: "catboost"
-model_version: "0.1.0"
-model_changelog: "Стартовый бейзлайн: дефолтные параметры, включен auto_class_weights для борьбы с дисбалансом"
+model_version: "0.1.1"
+model_changelog: "Тюнинг модели: убран автоматический баланс весов, добавлен гибкий поиск scale_pos_weight через Optuna"
 
 params:
-  auto_class_weights: "Balanced"
-  iterations: 1000
-  learning_rate: 0.05
-  depth: 6
+  iterations: 2000
+  eval_metric: "AUC"
+  depth: 7
+  learning_rate: 0.02179582974865377
+  l2_leaf_reg: 3.105816283196847
+  random_strength: 0.003465925186997861
+  scale_pos_weight: 47.62856389842424
+
+# Передаем не просто границы, а конфигурацию для suggest методы
 optuna_search_space:
-  iterations: [100, 1000]
-  depth: [4, 10]
-  learning_rate: [0.001, 0.1]
-  l2_leaf_reg: [1, 10]
+  depth: 
+    type: "int"
+    bounds: [4, 8] # Сузили до 8, так как 10 для таблиц часто избыточно и долго учится
+  learning_rate: 
+    type: "float"
+    bounds: [0.01, 0.15]
+    log: false
+  l2_leaf_reg: 
+    type: "float"
+    bounds: [1.0, 10.0]
+    log: false
+  random_strength: # Исправлена опечатка в имени параметра!
+    type: "float"
+    bounds: [0.001, 2.0]
+    log: true
+  scale_pos_weight: # Добавляем веса классов прямо в общий пул тюнинга разом!
+    type: "float"
+    bounds: [40.0, 100.0]
+    log: false

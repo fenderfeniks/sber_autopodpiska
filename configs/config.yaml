@@ -1,5 +1,6 @@
 # configs/config.yaml
 defaults:
+  - base_config
   - paths: paths
   - data: default
   - security: security

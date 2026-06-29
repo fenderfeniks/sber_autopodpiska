@@ -5,13 +5,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from core.utils import load_hydra_config, PROJECT_ROOT
-
-cfg = load_hydra_config()
-model_version = cfg.model.model_version
-run_name = cfg.run_name
-reports_dir = Path(PROJECT_ROOT / cfg.paths.reports_dir / run_name)
-reports_dir.mkdir(parents=True, exist_ok=True)
 
 class ShapExplainer():
     """Класс для глобальной и локальной интерпретации моделей с помощью SHAP.
@@ -28,11 +21,17 @@ class ShapExplainer():
         explainer (shap.TreeExplainer): Инициализированный инструмент расчета SHAP.
         shap_values (shap.Explanation): Рассчитанная матрица SHAP-значений.
     """
-    def __init__(self, X_val_clean_df:pd.DataFrame, y_val:pd.Series, model_wrapper):
+    def __init__(self, X_val_clean_df:pd.DataFrame, y_val:pd.Series, model_wrapper, config, project_root):
+        self.cfg = config
+        self.model_version = config.model.model_version
+        self.run_name = config.run_name
         self.model_wrapper = model_wrapper
         self.native_model = model_wrapper.model
         self.X_val_clean_df = X_val_clean_df
         self.y_val = y_val
+
+        self.reports_dir = Path(project_root / self.cfg.paths.reports_dir / self.run_name)
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
 
         print("Инициализация TreeExplainer...")
         self.explainer = shap.TreeExplainer(self.native_model)
@@ -64,7 +63,7 @@ class ShapExplainer():
         plt.tight_layout()
 
         # Сохраняем график в папку отчетов
-        plt.savefig(reports_dir / "shap_global_summary.png", bbox_inches='tight')
+        plt.savefig(self.reports_dir / "shap_global_summary.png", bbox_inches='tight')
 
         plt.show()
 
@@ -82,13 +81,13 @@ class ShapExplainer():
 
         plt.title(f"Зависимость SHAP-значения от физического значения фичи: {top_feature}", fontsize=12, pad=15)
         plt.tight_layout()
-        plt.savefig(reports_dir / f"shap_dependence_{top_feature}.png", bbox_inches='tight')
+        plt.savefig(self.reports_dir / f"shap_dependence_{top_feature}.png", bbox_inches='tight')
         plt.show()
 
         print("=== ТОП ПРИЗНАКОВ ПО ВЛИЯНИЮ НА МОДЕЛЬ ===")
 
         # Сохраняем текстовую таблицу в отчеты
-        feature_importance_df.to_csv(reports_dir / f"shap_feature_importance_v{model_version}.csv", index=False)
+        feature_importance_df.to_csv(self.reports_dir / f"shap_feature_importance_v{self.model_version}.csv", index=False)
 
         return feature_importance_df.head(max_display)
     
@@ -115,7 +114,7 @@ class ShapExplainer():
         plt.tight_layout()
 
         # Сохраняем локальный отчет
-        plt.savefig(reports_dir / f"shap_local_user_{sample_index}.png", bbox_inches='tight')
+        plt.savefig(self.reports_dir / f"shap_local_user_{sample_index}.png", bbox_inches='tight')
         plt.show()
 
         print(f"Фактическое значение таргета для этого объекта: {self.y_val.iloc[sample_index]}")
@@ -140,7 +139,7 @@ class ShapExplainer():
             shap.plots.heatmap(self.shap_values[pos_indices], max_display=10, show=False)
             plt.title("Что триггерит ложные срабатывания (False Positives) в модели? (Топ-10 ошибок)", fontsize=12, pad=20)
             plt.tight_layout()
-            plt.savefig(reports_dir / "shap_heatmap_false_positives.png", bbox_inches='tight')
+            plt.savefig(self.reports_dir / "shap_heatmap_false_positives.png", bbox_inches='tight')
             plt.show()
         else:
             print("Ложных срабатываний для анализа не найдено.")    
