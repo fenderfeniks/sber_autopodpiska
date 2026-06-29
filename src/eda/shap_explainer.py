@@ -5,12 +5,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-from core.utils import load_hydra_config
+from core.utils import load_hydra_config, PROJECT_ROOT
 
 cfg = load_hydra_config()
 model_version = cfg.model.model_version
-
-reports_dir = Path(cfg.paths.reports_dir)
+run_name = cfg.run_name
+reports_dir = Path(PROJECT_ROOT / cfg.paths.reports_dir / run_name)
 reports_dir.mkdir(parents=True, exist_ok=True)
 
 class ShapExplainer():

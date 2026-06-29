@@ -10,7 +10,8 @@ from core.utils import load_hydra_config, PROJECT_ROOT
 cfg = load_hydra_config()
 
 task_type = cfg.get('task_type', '') # Безопасно берем из корня конфига
-reports_dir = Path(PROJECT_ROOT / cfg.paths.reports_dir)
+run_name = cfg.run_name
+reports_dir = Path(PROJECT_ROOT / cfg.paths.reports_dir / run_name)
 reports_dir.mkdir(exist_ok=True)
 
 def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: pd.DataFrame):
@@ -49,8 +50,7 @@ def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: 
         plt.title(f"Матрица ошибок (Confusion Matrix) | Режим: {task_type.upper()}")
         plt.ylabel("Реальные значения (Actual)")
         plt.xlabel("Предсказания модели (Predicted)")
-        plt.tight_layout()
-        plt.show()
+
 
     # ============================================================================
     # ВЕТКА 2: РЕГРЕССИЯ (Анализ остатков и плотности ошибок)
@@ -79,8 +79,12 @@ def error_analyse(model: BaseModelWrapper, error_df: pd.DataFrame, X_val_clean: 
         axes[1].set_xlabel("Величина ошибки (Predicted - Actual)")
         axes[1].set_ylabel("Количество строк")
         
-        plt.tight_layout()
-        plt.show()
+    plt.tight_layout()
+
+    output_plot_path = reports_dir / f"error_analyse_{cfg.data.tabular.preprocessing_version}.png"
+    plt.savefig(output_plot_path, dpi=150, bbox_inches='tight')
+    plt.show()
+    
 
     
 def search_trends( error_df: pd.DataFrame, top_n_features:int = 6, top_k_categories:int = 15):
@@ -254,14 +258,14 @@ def worst_preds(error_df: pd.DataFrame, top_features_count:int = 5):
             report_text += f"Версия фичей: {cfg.data.tabular.features_version} | Версия препроцессинга: {cfg.data.tabular.preprocessing_version}\n"
             report_text += "="*70 + "\n\n"
             
-            report_text += "🔥 ТОП-5 FALSE POSITIVE (Модель уверенно ждала конверсию, но её не было):\n"
+            report_text += " ТОП-5 FALSE POSITIVE (Модель уверенно ждала конверсию, но её не было):\n"
             for idx, row in worst_fp.iterrows():
                 report_text += f"  • Строка [ID {idx}] | Вероятность модели: {row['Probability']:.3f}\n"
                 for f in features_to_print:
                     report_text += f"    - {f}: {row[f]}\n"
                 report_text += "  " + "-"*45 + "\n"
                 
-            report_text += "\n❄️ ТОП-5 FALSE NEGATIVE (Конверсия была, но модель её полностью пропустила):\n"
+            report_text += "\n ТОП-5 FALSE NEGATIVE (Конверсия была, но модель её полностью пропустила):\n"
             for idx, row in worst_fn.iterrows():
                 report_text += f"  • Строка [ID {idx}] | Вероятность модели: {row['Probability']:.3f}\n"
                 for f in features_to_print:
@@ -307,7 +311,7 @@ def worst_preds(error_df: pd.DataFrame, top_features_count:int = 5):
         report_text += f"Версия фичей: {cfg.data.tabular.features_version} | Версия препроцессинга: {cfg.data.tabular.preprocessing_version}\n"
         report_text += "="*70 + "\n\n"
         
-        report_text += "🚨 ТОП-10 ХУДШИХ ПРОГНОЗОВ (Где модель промахнулась сильнее всего):\n"
+        report_text += " ТОП-10 ХУДШИХ ПРОГНОЗОВ (Где модель промахнулась сильнее всего):\n"
         for idx, row in worst_cases.iterrows():
             report_text += f"  • Строка [ID {idx}] | Реально: {row['Actual']:.2f} | Предсказано: {row['Predicted']:.2f} | Ошибка: {row['Error']:.2f}\n"
             for f in features_to_print:
