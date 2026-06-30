@@ -11,136 +11,136 @@ conftest.py — базовые фикстуры для всех тестов.
 """
 
 import pytest
-import copy
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from omegaconf import OmegaConf
-from hydra import initialize, compose
 import mlflow
-from core.utils import load_hydra_config  
+import joblib
 
+from src.core.data import UniversalDataLoader
+from src.core.features import TabularPreprocessor
+from src.core.artifacts import ArtifactManager
+from src.core.pipeline import MLPipeline
 
-# ---------------------------------------------------------------------------
-# Константы тестового датасета
-# ---------------------------------------------------------------------------
-N_ROWS = 200          # достаточно для стратификации и надёжных сплитов
-RANDOM_SEED = 42
 TARGET_COL = "is_target_action"
-INFERENCE_SLA_SEC = 0.050   # 50 мс — SLA на один запрос
-LATENCY_WARMUP_RUNS = 3
-LATENCY_MEASURE_RUNS = 20
 
-
-# ---------------------------------------------------------------------------
-# Фикстура конфига — scope="function" чтобы мутации не просачивались
-# ---------------------------------------------------------------------------
 @pytest.fixture(scope="function")
 def mock_config(tmp_path):
-    """
-    Создаёт изолированный конфиг для каждого теста.
-    Использует оригинальный загрузчик проекта, обходя ограничения сигнатуры.
-    """
-    # 1. Загружаем базовый конфиг через вашу функцию (без лишних аргументов)
-    cfg = load_hydra_config(config_name="config")
-    
-    # 2. Так как возвращенный конфиг может быть закеширован, 
-    # обязательно делаем глубокую копию, чтобы мутации теста не текли наружу
-    import copy
-    cfg = copy.deepcopy(cfg)
-
-    # 3. Снимаем struct mode, чтобы можно было безопасно переопределять 
-    # и добавлять новые поля (например, пути внутри tmp_path)
-    OmegaConf.set_struct(cfg, False)
-
-    # 4. Имитируем overrides прямо через OmegaConf.update
-    # Значения заменят дефолтные или создадут новые поля, если их не было
-    OmegaConf.update(cfg, "data.tabular.target_col", TARGET_COL)
-    OmegaConf.update(cfg, "env", "dev")
-    OmegaConf.update(cfg, "data.sample_pct", 1.0)
-    OmegaConf.update(cfg, "data.test_size", 0.2)
-    OmegaConf.update(cfg, "data.val_size", 0.2)
-
-    # 5. Изолируем пути проекта внутри tmp_path конкретного тест-кейса
-    cfg.data_dir = str(tmp_path / "data")
-    cfg.paths.data_dir = str(tmp_path / "data")
-    cfg.paths.raw_dir = str(tmp_path / "data/raw")
-    cfg.paths.processed_dir = str(tmp_path / "data/processed")
-    cfg.paths.features_dir = str(tmp_path / "data/features")
-    cfg.paths.logs_dir = str(tmp_path / "logs")
-    cfg.paths.models_dir = str(tmp_path / "models")
-
-    # 6. Настраиваем изолированный MLflow
-    cfg.logging.mlflow.tracking_uri = f"sqlite:///{tmp_path}/mlflow.db"
-    cfg.logging.log_file = str(tmp_path / "test_pipeline.log")
-
-    Path(cfg.paths.models_dir).mkdir(parents=True, exist_ok=True)
-
-    mlflow.set_tracking_uri(cfg.logging.mlflow.tracking_uri)
-    mlflow.set_experiment("Default")
-
+    """Создаёт изолированный конфиг, повторяющий структуру реального проекта."""
+    cfg = OmegaConf.create({
+        "seed": 42,
+        "task_type": "binary",
+        "run_name": "test_run",
+        "data": {
+            "sample_pct": 1.0,
+            "test_size": 0.2,
+            "val_size": 0.2,
+            "tabular": {
+                "target_col": TARGET_COL,
+                "num_fill_strategy": "median",
+                "cat_fill_strategy": "unknown",
+                "max_missing_pct": 0.90,
+                "max_constant_pct": 0.99,
+                "max_row_missing_pct": 0.50,
+                "top_n_categories": 12,
+                "preprocessing_version": "1.0.0",
+                "features_version": "1.0.0",
+                "aggrigation_version": "v1.0.0",
+                "drop_cols": ["explicit_drop"],
+                "skip_imputation_cols": [],
+                "geo": {"cis": ["belarus", "kazakhstan"]},
+                "devices": {"mobile_categories": ["mobile", "tablet"]},
+                "city_markets": {},
+                "defaults_fallback": {
+                    "has_metro": 0, "population_2021": 100000, "avg_salary_2021": 33000, "cars_per_family": 0.65
+                }
+            }
+        },
+        "model": {
+            "name": "mock_model",
+            "model_version": "1.0.0",
+            "params": {"depth": 6}
+        },
+        "paths": {
+            "raw_dir": "data/raw",
+            "processed_dir": "data/processed",
+            "models_dir": "models",
+            "logs_dir": "logs"
+        },
+        "logging": {
+            "mlflow": {
+                "tracking_uri": f"sqlite:///{tmp_path}/mlflow.db",
+                "artifact_uri_rel": "mlruns_artifacts"
+            }
+        }
+    })
     return cfg
 
-
-# ---------------------------------------------------------------------------
-# Синтетический датасет — детерминированный, изолированный
-# ---------------------------------------------------------------------------
 @pytest.fixture(scope="function")
 def sample_data():
-    """
-    Генерирует синтетический датасет с контролируемыми свойствами:
-    - Фиксированный seed через Generator (не влияет на global numpy state).
-    - Явный дисбаланс классов (80/20) — реалистичен для бизнес-задач.
-    - NaN в категориальных признаках (~5%) — проверяет robustness.
-    - Константная колонка — проверяет что препроцессор её дропает.
-    - Высококоррелированная колонка — проверяет что модель не падает.
-    """
-    rng = np.random.default_rng(RANDOM_SEED)
-    n = N_ROWS
+    """Генерирует синтетический датасет, содержащий обязательные технические колонки проекта."""
+    rng = np.random.default_rng(42)
+    n = 200
 
     df = pd.DataFrame({
         "session_id": [f"sess_{i}" for i in range(n)],
-        "visitStartTime": rng.integers(1_600_000_000, 1_610_000_000, size=n),
+        "client_id": [f"client_{i}" for i in range(n)],
+        "visit_date": ["2026-06-01"] * n,
+        "visit_time": ["12:00:00"] * n,
+        "device_brand": rng.choice(["apple", "samsung", "huawei"], size=n),
         "device_category": rng.choice(["mobile", "desktop", "tablet"], size=n),
-        "browser": rng.choice(["Chrome", "Safari", "Firefox"], size=n),
-        "total_hits": rng.integers(1, 50, size=n),
-        "visit_number": rng.integers(1, 10, size=n),
-        "constant_col": 42,                         # константная колонка
+        "screen_area": rng.integers(300000, 2000000, size=n).astype(float),
+        "total_hits": rng.integers(1, 50, size=n).astype(float),
+        "explicit_drop": ["trash"] * n,
+        "constant_col": [42.0] * n,
         TARGET_COL: rng.choice([0, 1], size=n, p=[0.8, 0.2]),
     })
 
-    # ~5% NaN в браузере
+    # Добавляем немного NaN
     nan_idx = rng.choice(n, size=int(n * 0.05), replace=False)
-    df.loc[nan_idx, "browser"] = np.nan
+    df.loc[nan_idx, "device_brand"] = np.nan
 
     return df
 
+class DummyModel:
+    """Легковесный стаб модели для тестов инференса и пайплайна."""
+    def __init__(self):
+        self.file_extension = ".cbm"
+    def fit(self, X, y, X_val=None, y_val=None, tracker=None):
+        pass
+    def predict(self, X):
+        return np.zeros(len(X))
+    def predict_proba(self, X):
+        return np.hstack([np.ones((len(X), 1)) * 0.8, np.ones((len(X), 1)) * 0.2])
+    def save(self):
+        return "models/mock_model_v1.0.0.cbm"
+    def load(self, path):
+        pass
 
-# ---------------------------------------------------------------------------
-# Фабрика обученного пайплайна — переиспользуется в нескольких файлах
-# ---------------------------------------------------------------------------
 @pytest.fixture(scope="function")
-def trained_pipeline(mock_config, sample_data):
-    """
-    Возвращает уже обученный MLPipeline.
-    Используется в тестах где нужен инференс, а не само обучение.
-    """
-    from core.pipeline import MLPipeline
-
+def trained_pipeline(mock_config, sample_data, tmp_path):
+    """Возвращает предобученный пайплайн с DummyModel."""
+    tracker = ArtifactManager(mock_config, tmp_path)
+    pipeline = MLPipeline(mock_config, tracker, tmp_path)
+    
     target = mock_config.data.tabular.target_col
-    train_df = sample_data.iloc[:160]
-    X_train = train_df.drop(columns=[target])
-    y_train = train_df[target]
-    X_val = sample_data.iloc[160:180].drop(columns=[target])
-    y_val = sample_data.iloc[160:180][target]
+    X_train = sample_data.drop(columns=[target])
+    y_train = sample_data[target]
 
-    pipeline = MLPipeline(mock_config)
-    pipeline.train(X_train, y_train, X_val, y_val, save_artifacts=False, use_tracker=False)
-    return pipeline
+    # Подменяем get_model внутренним моком, чтобы не дергать реальный CatBoost
+    import src.core.pipeline as pipeline_module
+    original_get_model = pipeline_module.get_model
+    pipeline_module.get_model = lambda cfg, root: DummyModel()
+
+    pipeline.train(X_train, y_train, save_artifacts=False, use_tracker=False)
+    
+    yield pipeline
+    pipeline_module.get_model = original_get_model
 
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_mlflow():
-    """Гарантирует, что ни один тест не оставит за собой открытый MLflow run."""
+    """Гарантирует закрытие MLflow ранов после каждого теста."""
     yield
     while mlflow.active_run():
         mlflow.end_run()

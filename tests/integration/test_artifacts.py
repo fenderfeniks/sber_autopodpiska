@@ -11,21 +11,15 @@ test_artifacts.py — тесты ArtifactManager.
 
 import pytest
 import mlflow
-from pathlib import Path
-
-from core.artifacts import ArtifactManager
-
+import logging
+from src.core.artifacts import ArtifactManager
 
 # ---------------------------------------------------------------------------
 # Тест 1: log_metrics и log_params не падают внутри run
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_log_metrics_and_params_inside_run(mock_config):
-    """
-    Базовый контракт: ArtifactManager логирует метрики и параметры
-    без исключений внутри активного MLflow run.
-    """
-    manager = ArtifactManager(mock_config)
+def test_log_metrics_and_params_inside_run(mock_config, tmp_path):
+    manager = ArtifactManager(mock_config, tmp_path)
     manager.set_experiment("test_experiment")
 
     with manager.start_run(run_name="test_run"):
@@ -33,94 +27,57 @@ def test_log_metrics_and_params_inside_run(mock_config):
         manager.log_metrics({"rmse": 0.15, "mae": 0.10})
         manager.log_metrics({"val_loss": 0.20}, step=1)
 
-
-
 # ---------------------------------------------------------------------------
 # Тест 2: log_artifact с несуществующим файлом — warning, не crash
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_log_artifact_missing_file_logs_warning_not_crash(mock_config, caplog):
-    """
-    Если файл для логирования не существует, ArtifactManager должен
-    залогировать предупреждение и продолжить работу — не падать.
-    Это важно для graceful degradation в проде.
-    """
-    import logging
-    manager = ArtifactManager(mock_config)
+def test_log_artifact_missing_file_logs_warning_not_crash(mock_config, tmp_path, caplog):
+    manager = ArtifactManager(mock_config, tmp_path)
     manager.set_experiment("test_experiment")
 
     with manager.start_run(run_name="test_artifact"):
-        with caplog.at_level(logging.WARNING, logger="core.artifacts"):
+        with caplog.at_level(logging.WARNING, logger="src.core.artifacts"):
             manager.log_artifact("/nonexistent/path/model.pkl", "models")
 
-    # Тест пройдёт если не было исключения (проверяем через отсутствие краша)
-
-
 # ---------------------------------------------------------------------------
-# Тест 3: set_experiment — идемпотентен (повторный вызов не падает)
+# Тест 3: set_experiment — идемпотентен
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_set_experiment_is_idempotent(mock_config):
-    """
-    Повторный вызов set_experiment с одним и тем же именем не должен
-    поднимать исключение. MLflow должен использовать существующий эксперимент.
-    """
-    manager = ArtifactManager(mock_config)
-
+def test_set_experiment_is_idempotent(mock_config, tmp_path):
+    manager = ArtifactManager(mock_config, tmp_path)
     manager.set_experiment("idempotent_test_exp")
-    manager.set_experiment("idempotent_test_exp")  # второй вызов
-
+    manager.set_experiment("idempotent_test_exp")
 
 # ---------------------------------------------------------------------------
 # Тест 4: get_optuna_callback возвращает список
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_get_optuna_callback_returns_list(mock_config):
-    """
-    get_optuna_callback должен возвращать список.
-    Пустой — если optuna_integration не установлен.
-    С коллбэком — если установлен.
-    В любом случае не None и не исключение.
-    """
-    manager = ArtifactManager(mock_config)
+def test_get_optuna_callback_returns_list(mock_config, tmp_path):
+    manager = ArtifactManager(mock_config, tmp_path)
     result = manager.get_optuna_callback(metric_name="val_score")
-
-    assert isinstance(result, list), (
-        f"get_optuna_callback вернул {type(result)}, ожидался list."
-    )
-
+    assert isinstance(result, list)
 
 # ---------------------------------------------------------------------------
-# Тест 5: log_dict сохраняет словарь внутри run
+# Тест 5: log_dict сохраняет словарь
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_log_dict_inside_run(mock_config):
-    """
-    log_dict должен сохранять словарь как JSON-артефакт без исключений.
-    """
-    manager = ArtifactManager(mock_config)
+def test_log_dict_inside_run(mock_config, tmp_path):
+    manager = ArtifactManager(mock_config, tmp_path)
     manager.set_experiment("test_experiment")
-
-    test_dict = {"col_a": "float64", "col_b": "int64", "col_c": "object"}
+    test_dict = {"col_a": "float64", "col_b": "int64"}
 
     with manager.start_run(run_name="test_dict"):
         manager.log_dict(test_dict, "feature_schema.json", "schemas")
 
-
 # ---------------------------------------------------------------------------
-# Тест 6: start_run является контекстным менеджером и закрывает run
+# Тест 6: start_run закрывает run
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_start_run_closes_run_on_exit(mock_config):
-    """
-    После выхода из контекстного менеджера start_run активного run быть не должно.
-    """
-    manager = ArtifactManager(mock_config)
+def test_start_run_closes_run_on_exit(mock_config, tmp_path):
+    manager = ArtifactManager(mock_config, tmp_path)
     manager.set_experiment("test_experiment")
 
     with manager.start_run(run_name="ctx_test"):
-        assert mlflow.active_run() is not None, "Внутри контекста должен быть активный run."
+        assert mlflow.active_run() is not None
 
-    assert mlflow.active_run() is None, (
-        "После выхода из контекста run должен быть закрыт."
-    )
+    assert mlflow.active_run() is None
