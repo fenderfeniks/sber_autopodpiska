@@ -8,7 +8,6 @@ import numpy as np
 import joblib
 from omegaconf import DictConfig, OmegaConf
 
-from core.utils import PROJECT_ROOT
 from .base import BaseModelWrapper
 
 # Импортируем специфичные библиотеки внутри методов или через try/except,
@@ -29,8 +28,8 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 class LightGBMWrapper(BaseModelWrapper):
-    def __init__(self, config: DictConfig):
-        super().__init__(config)
+    def __init__(self, config: DictConfig, project_root):
+        super().__init__(config, project_root)
         if not LIGHTGBM_INSTALLED:
             raise ImportError("Библиотека lightgbm не установлена!")
 
@@ -96,7 +95,7 @@ class LightGBMWrapper(BaseModelWrapper):
     def save(self) -> str:
         """Сохранение Scikit-Learn интерфейса LightGBM через joblib."""
         file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}.pkl"
-        save_path = PROJECT_ROOT / self.cfg.paths.models_dir / file_name
+        save_path = self.PROJECT_ROOT / self.cfg.paths.models_dir / file_name
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         joblib.dump(self.model, save_path)

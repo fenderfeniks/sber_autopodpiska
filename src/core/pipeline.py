@@ -6,13 +6,11 @@ import json
 import joblib
 from sklearn.pipeline import Pipeline
 from omegaconf import DictConfig, OmegaConf
-import matplotlib.pyplot as plt
 
 # Внутренние импорты
 from src.core.features import TabularPreprocessor, FeatureEngineer
 from src.core.models import get_model
 from src.core.metrics import calculate_metrics
-from src.eda.visualisation import error_analyse, search_trends, feature_importance
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +58,7 @@ class MLPipeline:
             X_val_clean = self.preprocessor.transform(X_val)
 
         # 3. Инициализация и обучение модели
-        self.model = get_model(self.cfg)
+        self.model = get_model(self.cfg, self.PROJECT_ROOT)
 
         active_tracker = self.tracker if use_tracker else None
         # ПЕРЕДАЕМ ТРЕКЕР В МОДЕЛЬ (Dependency Injection)
@@ -105,6 +103,10 @@ class MLPipeline:
 
             # 4. Логируем через менеджер артефактов
             if active_tracker:
+                #намеренный внутренний импорт для облегчения API docker image
+                from src.eda.visualisation import error_analyse, search_trends, feature_importance
+                import matplotlib.pyplot as plt
+
                 final_metrics_to_log = {f"final_val_{k}": v for k, v in final_metrics.items()}
                 active_tracker.log_metrics(final_metrics_to_log)
                 
@@ -214,7 +216,7 @@ class MLPipeline:
         logger.info("Препроцессор успешно загружен.")
 
         # 2. Инициализация архитектуры модели и загрузка весов по версии модели
-        self.model = get_model(self.cfg)
+        self.model = get_model(self.cfg, self.PROJECT_ROOT)
         model_path = models_dir / f"{self.cfg.model.name}_v{model_ver}{self.model.file_extension}"
         if not model_path.exists():
             raise FileNotFoundError(f"Модель не найдена: {model_path}")

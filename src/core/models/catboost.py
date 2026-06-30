@@ -6,7 +6,6 @@ import pandas as pd
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
-from core.utils import PROJECT_ROOT
 from .base import BaseModelWrapper
 
 # Импортируем специфичные библиотеки внутри методов или через try/except,
@@ -24,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 class CatBoostWrapper(BaseModelWrapper):
 
-    def __init__(self, config: DictConfig):
-        super().__init__(config)
+    def __init__(self, config: DictConfig, project_root):
+        super().__init__(config, project_root)
         self.ml_cfg = self.cfg.training.ml
 
         # Интегрируем Loss и Metrics из конфига прямо в параметры CatBoost
@@ -97,7 +96,7 @@ class CatBoostWrapper(BaseModelWrapper):
         """Нативное сохранение в формат CatBoost (.cbm)"""
         # Генерируем путь с использованием свойства file_extension
         file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}{self.file_extension}"
-        save_path = PROJECT_ROOT / self.cfg.paths.models_dir / file_name
+        save_path = self.PROJECT_ROOT / self.cfg.paths.models_dir / file_name
 
         # Создаем папку, если ее нет
         save_path.parent.mkdir(parents=True, exist_ok=True)

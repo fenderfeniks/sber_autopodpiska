@@ -7,7 +7,6 @@ import pandas as pd
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
-from core.utils import PROJECT_ROOT
 from .base import BaseModelWrapper
 
 # Импортируем специфичные библиотеки внутри методов или через try/except,
@@ -27,11 +26,10 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 class XGBoostWrapper(BaseModelWrapper):
-    def __init__(self, config: DictConfig):
-        super().__init__(config)
+    def __init__(self, config: DictConfig, project_root):
+        super().__init__(config, project_root)
         if not XGBOOST_INSTALLED:
             raise ImportError("Библиотека xgboost не установлена!")
-
         self.ml_cfg = self.cfg.training.ml
         full_params = OmegaConf.to_container(self.model_cfg.params, resolve=True)
 
@@ -90,7 +88,7 @@ class XGBoostWrapper(BaseModelWrapper):
     def save(self) -> str:
         """Нативное сохранение XGBoost в универсальный формат UBJSON."""
         file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}.ubj"
-        save_path = PROJECT_ROOT / self.cfg.paths.models_dir / file_name
+        save_path = self.PROJECT_ROOT / self.cfg.paths.models_dir / file_name
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.model.save_model(str(save_path))

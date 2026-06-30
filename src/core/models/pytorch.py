@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 from omegaconf import DictConfig
-from core.utils import PROJECT_ROOT
+
 from .base import BaseModelWrapper
 
 # Импортируем специфичные библиотеки внутри методов или через try/except,
@@ -32,11 +32,10 @@ class PyTorchWrapper(BaseModelWrapper):
     Сохраняет единый интерфейс fit(X, y) с классическими ML моделями.
     """
 
-    def __init__(self, config: DictConfig, custom_nn: nn.Module = None):
-        super().__init__(config)
+    def __init__(self, config: DictConfig, project_root, custom_nn: nn.Module = None):
+        super().__init__(config, project_root)
 
         if not PYTORCH_INSTALLED: raise ImportError("PyTorch не установлен!")
-
         self.dl_cfg = self.cfg.training.dl
         self.device = torch.device(self.cfg.training.device if torch.cuda.is_available() else "cpu")
 
@@ -191,7 +190,7 @@ class PyTorchWrapper(BaseModelWrapper):
     def save(self) -> str:
         """Нативное сохранение весов PyTorch модели (state_dict)."""
         file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}.pt"
-        save_path = PROJECT_ROOT / self.cfg.paths.models_dir / file_name
+        save_path = self.PROJECT_ROOT / self.cfg.paths.models_dir / file_name
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         if self.model is not None:

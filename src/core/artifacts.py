@@ -42,9 +42,9 @@ class ArtifactManager:
         mlflow.set_experiment(experiment_name)
 
     @contextmanager
-    def start_run(self, run_name: str = None):
+    def start_run(self, run_name: str = None, nested: bool = False):
         """Контекстный менеджер для управления жизненным циклом запуска с авто-версионированием."""
-        with mlflow.start_run(run_name=run_name) as run:
+        with mlflow.start_run(run_name=run_name, nested=nested) as run:
             try:
                 # 1. Вытаскиваем версии и чейнджлоги из наших новых конфигов
                 tabular_cfg = self.cfg.get('data', {}).get('tabular', {})

@@ -9,18 +9,13 @@ from dotenv import load_dotenv
 # Импортируем только ООП-компоненты из ядра
 from src.core.data import UniversalDataLoader
 from src.core.pipeline import MLPipeline
-from src.core.tuner import OptunaTuner
 from src.core.utils import PROJECT_ROOT
-from src.core.artifacts import ArtifactManager
 from src.core.metrics import calculate_metrics
-
-from hydra.core.config_store import ConfigStore
-from src.core.config_schema import AppConfig
+from src.core.utils import register_config_schema
 
 load_dotenv()
 
-cs = ConfigStore.instance()
-cs.store(name="base_config", node=AppConfig)
+register_config_schema()
 
 logger = logging.getLogger(__name__)
 logging.getLogger("PIL").setLevel(logging.WARNING)
@@ -56,15 +51,27 @@ def main(cfg: DictConfig):
     logger.info(f"=== ЗАПУСК ORCHESTRATOR | РЕЖИМ: {mode.upper()} ===")
 
     # 2. НАСТРОЙКА ИНФРАСТРУКТУРЫ АРТЕФАКТОВ (Без прямого вызова MLflow)
-    tracker = ArtifactManager(cfg, project_root=PROJECT_ROOT)
-    experiment_name = cfg.logging.mlflow.experiments.get(mode, "default_experiment")
-
-    # Явно указываем локальный путь для тяжелых артефактов и передаем трекеру
-    local_artifact_repo = str(PROJECT_ROOT / cfg.paths.logs_dir / "mlruns")
-    tracker.set_experiment(experiment_name, artifact_location=local_artifact_repo)
+    # ЛЕНИВО: tracker нужен только train/tune/evaluate (они логируют в MLflow).
+    # inference его не использует — не тянем mlflow-зависимость в этом режиме
+    # и не плодим experiment runs на простом батч-предсказании.
+    tracker = None
+    if mode in ("train", "tune", "evaluate"):
+        from src.core.artifacts import ArtifactManager
+        tracker = ArtifactManager(cfg, project_root=PROJECT_ROOT)
+        experiment_name = cfg.logging.mlflow.experiments.get(mode, "default_experiment")
+        loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT, source_type='sql')
+        # Явно указываем локальный путь для тяжелых артефактов и передаем трекеру
+        local_artifact_repo = (PROJECT_ROOT / cfg.paths.logs_dir / "mlruns").as_uri()
+        tracker.set_experiment(experiment_name, artifact_location=local_artifact_repo)
+    elif mode == 'inference':
+        if cfg.paths.data_file_name.endswith('.csv'):
+            loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT, source_type='csv')
+        else:
+            file_ext = cfg.paths.data_file_name.split('.')[-1]
+            loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT, source_type=file_ext)
 
     # 3. Загрузка данных (Общая для всех режимов)
-    loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT)
+    
     df = loader.load_data()
     target = cfg.data.tabular.target_col
 
@@ -89,6 +96,7 @@ def main(cfg: DictConfig):
     # РЕЖИМ 2: ТЮНИНГ (OPTUNA)
     # ==========================================================
     elif mode == "tune":
+        from src.core.tuner import OptunaTuner
         train_df, val_df, _ = loader.get_splits(df)
 
         X_train, y_train = train_df.drop(columns=[target]), train_df[target]
@@ -96,7 +104,6 @@ def main(cfg: DictConfig):
 
         with tracker.start_run(run_name=f"{cfg.run_name}_optuna"):
             tuner = OptunaTuner(cfg, tracker=tracker, project_root=PROJECT_ROOT)
-            
             best_params = tuner.tune(X_train, y_train, X_val, y_val, tracker=tracker)
 
             logger.info(f"Тюнинг завершен. Лучшие параметры найдены: {best_params}")
@@ -107,16 +114,12 @@ def main(cfg: DictConfig):
                 OmegaConf.update(cfg, f"model.params.{key}", value, force_add=True)
 
             # 2. ЖЕЛЕЗОБЕТОННЫЙ ФИКС: Передаем эстафету пайплайну
-            pipeline = MLPipeline(cfg, tracker=tracker, project_root=PROJECT_ROOT)
-            
-            # Перезаписываем параметры СТРОГО во внутреннем словаре пайплайна, 
-            # из которого твой код инициализирует CatBoostClassifier
-            if hasattr(pipeline, 'cfg') and 'model' in pipeline.cfg:
-                for key, value in best_params.items():
-                    pipeline.cfg.model.params[key] = value
+            with tracker.start_run(run_name=f"{cfg.run_name}_final", nested=True):
 
-            # Обучаем финальную модель (теперь она ТОЧНО возьмет лучшие параметры!)
-            pipeline.train(X_train, y_train, X_val, y_val, save_artifacts=True)
+                pipeline = MLPipeline(cfg, tracker=tracker, project_root=PROJECT_ROOT)
+                # Обучаем финальную модель (теперь она ТОЧНО возьмет лучшие параметры!)
+                pipeline.train(X_train, y_train, X_val, y_val, save_artifacts=True)
+
 
     # ==========================================================
     # РЕЖИМ 3: ОЦЕНКА (EVALUATE) - Тестирование отложенной выборки
@@ -149,7 +152,7 @@ def main(cfg: DictConfig):
                     pass
 
             # Считаем и логируем метрики
-            test_metrics = calculate_metrics(y_test, y_pred, cfg.task_type, y_prob)
+            test_metrics = calculate_metrics(y_test, y_pred, task_type=cfg.task_type, y_prob=y_prob)
 
             metrics_to_log = {f"test_{k}": v for k, v in test_metrics.items()}
             tracker.log_metrics(metrics_to_log)

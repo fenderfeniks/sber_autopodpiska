@@ -5,25 +5,15 @@ import logging
 from pathlib import Path
 from pydantic import BaseModel, create_model
 from typing import Any, Optional, Union, List, Dict
-from core.utils import load_hydra_config, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-# 1. Динамически достаем версию из Hydra
-try:
-    cfg = load_hydra_config("config")
-    MODEL_VERSION = cfg.model.version
-    MODEL_DIR = cfg.paths.models_dir
-except Exception:
-    MODEL_DIR = 'models'
-    MODEL_VERSION = "1.0.0"
-
-# 3. Строим надежный абсолютный путь
-SCHEMA_PATH = PROJECT_ROOT / MODEL_DIR / f"feature_schema_v{MODEL_VERSION}.json"
 
 def build_dynamic_request_model(schema_path: Path):
     """
     Фабрика. Читает json со схемой колонок и возвращает готовый Pydantic класс.
+    Путь к схеме передаётся явно из main.py (единственного места, где
+    собираются cfg и PROJECT_ROOT), а не вычисляется здесь повторно.
     """
     if not schema_path.exists():
         logger.warning(
@@ -50,19 +40,14 @@ def build_dynamic_request_model(schema_path: Path):
     fields: Dict[str, Any] = {}
     for col_name, dtype in feature_schema.items():
         python_type = type_mapping.get(dtype, Any)
-        # Кортеж (Тип, ...) означает, что поле обязательное (required)
         fields[col_name] = (python_type, ...)
 
-    # Динамически создаем класс с именем 'PredictionRequest'
     return create_model("PredictionRequest", **fields)
 
 
 # ============================================================
 # ГОТОВЫЕ ЭКСПОРТЫ ДЛЯ API
 # ============================================================
-# Этот класс сгенерируется в момент запуска uvicorn
-PredictionRequest = build_dynamic_request_model(SCHEMA_PATH)
-
 # Ответ от API всегда статичен, поэтому пишем его руками
 class PredictionResponse(BaseModel):
     prediction: Union[float, int, str]

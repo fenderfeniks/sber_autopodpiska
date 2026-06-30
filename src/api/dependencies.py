@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import Request, HTTPException, Security
 from fastapi.security import APIKeyHeader
-from core.utils import load_hydra_config
 
 # Ждем заголовок 'X-API-Key' в запросе
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -17,9 +16,15 @@ def _parse_allowed_keys(cfg) -> set[str]:
         )
     return {key.strip() for key in raw.split(",") if key.strip()}
 
-def verify_api_key(api_key: str = Security(api_key_header)):
-    """Проверка ключа. В dev-режиме пропускает любой ключ."""
-    cfg = load_hydra_config()
+def verify_api_key(request: Request, api_key: str = Security(api_key_header)):
+    """
+    Проверка ключа. В dev-режиме пропускает любой ключ.
+    cfg берём из app.state — он загружен один раз при старте в main.py,
+    а не читаем конфиг с диска на каждый запрос.
+    """
+    cfg = request.app.state.cfg
+    if cfg is None:
+        raise HTTPException(status_code=503, detail="Конфигурация не загружена.")
 
     if cfg.env == "dev":
         return api_key
@@ -42,4 +47,7 @@ def get_ml_model(request: Request):
     return model
 
 def get_preprocessor(request: Request):
-    return request.app.state.preprocessor
+    preprocessor = request.app.state.preprocessor
+    if not preprocessor:
+        raise HTTPException(status_code=503, detail="Препроцессор еще загружается...")
+    return preprocessor

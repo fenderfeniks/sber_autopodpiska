@@ -5,8 +5,9 @@ import numpy as np
 from omegaconf import DictConfig
 
 class BaseModelWrapper(ABC):
-    def __init__(self, config: DictConfig):
+    def __init__(self, config: DictConfig, project_root):
         self.cfg = config
+        self.PROJECT_ROOT = project_root
         self.model_cfg = config.model
         self.task_type = config.task_type
         self.model = None

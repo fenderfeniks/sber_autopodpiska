@@ -4,7 +4,7 @@
 PYTHON = python
 PYTEST = pytest
 
-.PHONY: help venv install test test-unit test-integration run-train run-tune clean
+.PHONY: help venv install test test-unit test-integration run-train run-tune run-evaluate run-inference clean
 
 # Команда по умолчанию (показывает список доступных команд)
 help:
@@ -16,6 +16,8 @@ help:
 	@echo "  make test-integration  - Запустить тяжелые интеграционные тесты"
 	@echo "  make run-train         - Запустить обучение модели (mode=train)"
 	@echo "  make run-tune          - Запустить подбор гиперпараметров (mode=tune)"
+	@echo "  make run-evaluate      - Оценка модели на тестовой выборке (mode=evaluate)"
+	@echo "  make run-inference     - Прогноз на новых данных (mode=inference)"
 	@echo "  make clean             - Полная очистка проекта от кэша, pyc файлов и логов"
 
 # ============================================================
@@ -57,6 +59,12 @@ run-train:
 
 run-tune:
 	$(PYTHON) -m main mode=tune
+
+run-evaluate:
+	$(PYTHON) -m main mode=evaluate
+
+run-inference:
+	$(PYTHON) -m main mode=inference
 
 # ============================================================
 # ОЧИСТКА ПРОЕКТА (Кроссплатформенная)

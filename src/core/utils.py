@@ -27,25 +27,21 @@ def get_project_root() -> Path:
 # ГЛОБАЛЬНАЯ КОНСТАНТА КОРНЯ ПРОЕКТА
 PROJECT_ROOT = get_project_root()
 
+def register_config_schema():
+    cs = ConfigStore.instance()
+    cs.store(name="base_config", node=AppConfig)
+
 
 @functools.lru_cache(maxsize=1)
 def load_hydra_config(config_name: str = "config") -> DictConfig:
     """Загружает конфиг один раз, валидирует по схеме AppConfig и кеширует его."""
-    # Защита: если Hydra уже инициализирована, сбрасываем её инстанс
     if GlobalHydra.instance().is_initialized():
         GlobalHydra.instance().clear()
-    # Регистрируем схему типов в глобальном хранилище Hydra
-    cs = ConfigStore.instance()
-    cs.store(name="config_schema", node=AppConfig)
 
-    # Инициализируем только если Hydra еще не запущена в текущем процессе
+    register_config_schema()
+
     if not GlobalHydra.instance().is_initialized():
-        # PROJECT_ROOT должен быть доступен (мы берем его из окружения процесса)
-        from pathlib import Path
-        import os
-        
-        # На всякий случай рассчитываем путь от корня, если cwd сдвинут
-        abs_config_path = str(Path(os.getcwd()) / "configs")
+        abs_config_path = str(PROJECT_ROOT / "configs")  # <-- было через os.getcwd()
         initialize_config_dir(version_base=None, config_dir=abs_config_path)
 
     return compose(config_name=config_name)

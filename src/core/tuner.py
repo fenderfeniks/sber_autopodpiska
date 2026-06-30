@@ -55,9 +55,7 @@ class OptunaTuner:
                         
                         OmegaConf.update(trial_cfg, f"model.params.{param_name}", value)
                         current_trial_params[param_name] = value
-            if mlflow.active_run():
-                active_experiment_id = mlflow.active_run().info.experiment_id
-                mlflow.set_experiment(experiment_id=active_experiment_id)
+
             # === СТАРТ ВЛОЖЕННОГО РАНА В MLFLOW ===
             # run_name делаем коротким, например "trial_0", "trial_1"
             with mlflow.start_run(run_name=f"trial_{trial.number}", nested=True):
