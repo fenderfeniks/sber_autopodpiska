@@ -90,3 +90,7 @@ mlflow.db-journal
 !/data/**/*.dvc
 # Временный кэш интерфейса Gradio
 .gradio/
+
+# Бэкапы и чекпоинты Jupyter-ноутбуков
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
