@@ -1,5 +1,22 @@
 # sber_autopodpiska — предсказание целевого действия в сессии
 
+![Python](https://img.shields.io/badge/python-3.10-blue?logo=python&logoColor=white)
+![CatBoost](https://img.shields.io/badge/model-CatBoost-ffcc00)
+![FastAPI](https://img.shields.io/badge/serving-FastAPI-009688?logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/infra-Docker-2496ED?logo=docker&logoColor=white)
+![Airflow](https://img.shields.io/badge/orchestration-Airflow-017CEE?logo=apacheairflow&logoColor=white)
+![MLflow](https://img.shields.io/badge/tracking-MLflow-0194E2?logo=mlflow&logoColor=white)
+![Optuna](https://img.shields.io/badge/tuning-Optuna-7C3AED)
+![Hydra](https://img.shields.io/badge/config-Hydra-89b8cd)
+![PostgreSQL](https://img.shields.io/badge/data-PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Prometheus](https://img.shields.io/badge/monitoring-Prometheus-E6522C?logo=prometheus&logoColor=white)
+![pytest](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)
+
+![ROC-AUC](https://img.shields.io/badge/ROC--AUC-0.879-success)
+![Accuracy](https://img.shields.io/badge/Accuracy-0.834-success)
+![F1 weighted](https://img.shields.io/badge/F1--weighted-0.889-success)
+![Class imbalance](https://img.shields.io/badge/class%20imbalance-97%25%20%2F%203%25-orange)
+
 Production-grade ML-пайплайн для бинарной классификации: предсказание вероятности совершения
 целевого действия (заявка на автоподписку) в рамках пользовательской сессии на основе данных
 веб-аналитики (Google Analytics-подобные хиты и сессии).
