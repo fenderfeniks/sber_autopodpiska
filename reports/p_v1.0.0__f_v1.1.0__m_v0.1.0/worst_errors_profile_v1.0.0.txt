@@ -1,0 +1,77 @@
+=== ОТЧЕТ ПО ХУДШИМ ОШИБКАМ КЛАССИФИКАЦИИ ===
+Версия фичей: 1.1.0 | Версия препроцессинга: 1.0.0
+======================================================================
+
+🔥 ТОП-5 FALSE POSITIVE (Модель уверенно ждала конверсию, но её не было):
+  • Строка [ID 7736] | Вероятность модели: 0.865
+    - visit_date: 2021-08-17
+    - visit_time: 18:00:00
+    - visit_number: 55
+    - utm_source: hTjLvqNxGggkGnxSCaTm
+    - utm_medium: stories
+  ---------------------------------------------
+  • Строка [ID 8550] | Вероятность модели: 0.851
+    - visit_date: 2021-07-20
+    - visit_time: 22:00:00
+    - visit_number: 3
+    - utm_source: bByPQxmDaMXgpHeypKSM
+    - utm_medium: referral
+  ---------------------------------------------
+  • Строка [ID 7463] | Вероятность модели: 0.839
+    - visit_date: 2021-09-08
+    - visit_time: 12:00:00
+    - visit_number: 7
+    - utm_source: bByPQxmDaMXgpHeypKSM
+    - utm_medium: referral
+  ---------------------------------------------
+  • Строка [ID 8754] | Вероятность модели: 0.837
+    - visit_date: 2021-06-25
+    - visit_time: 19:00:00
+    - visit_number: 22
+    - utm_source: hTjLvqNxGggkGnxSCaTm
+    - utm_medium: stories
+  ---------------------------------------------
+  • Строка [ID 4350] | Вероятность модели: 0.826
+    - visit_date: 2021-10-12
+    - visit_time: 16:00:00
+    - visit_number: 2
+    - utm_source: bByPQxmDaMXgpHeypKSM
+    - utm_medium: referral
+  ---------------------------------------------
+
+❄️ ТОП-5 FALSE NEGATIVE (Конверсия была, но модель её полностью пропустила):
+  • Строка [ID 1997] | Вероятность модели: 0.110
+    - visit_date: 2021-07-08
+    - visit_time: 15:00:00
+    - visit_number: 1
+    - utm_source: geDcueAOghDzHkGMmdOq
+    - utm_medium: cpm
+  ---------------------------------------------
+  • Строка [ID 70] | Вероятность модели: 0.130
+    - visit_date: 2021-12-27
+    - visit_time: 15:25:45
+    - visit_number: 1
+    - utm_source: MvfHsxITijuriZxsqZqt
+    - utm_medium: cpm
+  ---------------------------------------------
+  • Строка [ID 6203] | Вероятность модели: 0.139
+    - visit_date: 2021-08-17
+    - visit_time: 23:00:00
+    - visit_number: 1
+    - utm_source: MvfHsxITijuriZxsqZqt
+    - utm_medium: cpm
+  ---------------------------------------------
+  • Строка [ID 5376] | Вероятность модели: 0.145
+    - visit_date: 2021-10-07
+    - visit_time: 00:00:00
+    - visit_number: 1
+    - utm_source: bByPQxmDaMXgpHeypKSM
+    - utm_medium: referral
+  ---------------------------------------------
+  • Строка [ID 2250] | Вероятность модели: 0.159
+    - visit_date: 2021-06-29
+    - visit_time: 12:00:00
+    - visit_number: 1
+    - utm_source: hTjLvqNxGggkGnxSCaTm
+    - utm_medium: stories
+  ---------------------------------------------

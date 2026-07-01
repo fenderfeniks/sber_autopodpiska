@@ -70,7 +70,7 @@ multirun/
 # Они должны управляться через DVC или генерироваться кодом!
 /data/
 /models/
-/reports/
+#/reports/
 /logs/
 
 # Кэш самого CatBoost / XGBoost при обучении

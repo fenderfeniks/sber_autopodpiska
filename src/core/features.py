@@ -345,7 +345,6 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         if 'total_car_views' in X_transformed.columns:
             X_transformed['user_vs_city_car_interest'] = X_transformed['total_car_views'] / (X_transformed['city_cars_per_family'] + 1e-5)
 
-        
         return X_transformed
 
     _ENGINEERED_COLUMNS = [

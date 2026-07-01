@@ -11,7 +11,7 @@ raw_dir: "${paths.data_dir}/raw"
 processed_dir: "${paths.data_dir}/processed"
 features_dir: "${paths.data_dir}/features"
 
-data_file_name: "aggregated_features_1.2.0_sample_0.05.parquet"  #placeholder
+data_file_name: "data.pq"  #placeholder
 
 # --- Имена таблиц в СУБД ---
 table_name: "ga_sessions"  # Имя итоговой витрины/представления, которую будет читать модель
