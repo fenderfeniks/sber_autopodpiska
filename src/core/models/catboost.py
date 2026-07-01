@@ -94,18 +94,13 @@ class CatBoostWrapper(BaseModelWrapper):
 
     def save(self) -> str:
         """Нативное сохранение в формат CatBoost (.cbm)"""
-        # Генерируем путь с использованием свойства file_extension
-        file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}{self.file_extension}"
-        save_path = self.PROJECT_ROOT / self.cfg.paths.models_dir / file_name
-
-        # Создаем папку, если ее нет
+        
+        save_path = self.get_artifact_path(self.models_dir, self.model_version)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Нативное сохранение (CatBoost ожидает строку, а не объект Path)
         self.model.save_model(str(save_path))
         logger.info(f"Модель CatBoost нативно сохранена в {save_path}")
-
-        # УДАЛЕНА ЛОГИКА MLFLOW ОТСЮДА
 
         return str(save_path)
 

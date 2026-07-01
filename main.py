@@ -7,11 +7,12 @@ import pandas as pd
 from dotenv import load_dotenv
 
 # Импортируем только ООП-компоненты из ядра
-from src.core.data import UniversalDataLoader
 from src.core.pipeline import MLPipeline
 from src.core.utils import PROJECT_ROOT
 from src.core.metrics import calculate_metrics
 from src.core.utils import register_config_schema
+from src.core.data import SqlAggregatedDataSource, FlatFileDataSource
+from src.core.splitting import split_data
 
 load_dotenv()
 
@@ -59,20 +60,16 @@ def main(cfg: DictConfig):
         from src.core.artifacts import ArtifactManager
         tracker = ArtifactManager(cfg, project_root=PROJECT_ROOT)
         experiment_name = cfg.logging.mlflow.experiments.get(mode, "default_experiment")
-        loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT, source_type='sql')
-        # Явно указываем локальный путь для тяжелых артефактов и передаем трекеру
+        source = SqlAggregatedDataSource(cfg, project_root=PROJECT_ROOT)
         local_artifact_repo = (PROJECT_ROOT / cfg.paths.logs_dir / "mlruns").as_uri()
         tracker.set_experiment(experiment_name, artifact_location=local_artifact_repo)
     elif mode == 'inference':
-        if cfg.paths.data_file_name.endswith('.csv'):
-            loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT, source_type='csv')
-        else:
-            file_ext = cfg.paths.data_file_name.split('.')[-1]
-            loader = UniversalDataLoader(cfg, project_root=PROJECT_ROOT, source_type=file_ext)
+        source = FlatFileDataSource(cfg, project_root=PROJECT_ROOT)
+
+    
 
     # 3. Загрузка данных (Общая для всех режимов)
-    
-    df = loader.load_data()
+    df = source.load()
     target = cfg.data.tabular.target_col
 
     # ==========================================================
@@ -82,7 +79,7 @@ def main(cfg: DictConfig):
         logger.info("Запуск модуля EDA...")
         # run_eda(cfg)
     elif mode == "train":
-        train_df, val_df, _ = loader.get_splits(df)
+        train_df, val_df, _ = split_data(cfg, df)
 
         X_train, y_train = train_df.drop(columns=[target]), train_df[target]
         X_val, y_val = val_df.drop(columns=[target]), val_df[target]
@@ -97,14 +94,14 @@ def main(cfg: DictConfig):
     # ==========================================================
     elif mode == "tune":
         from src.core.tuner import OptunaTuner
-        train_df, val_df, _ = loader.get_splits(df)
+        train_df, val_df, _ = split_data(cfg, df)
 
         X_train, y_train = train_df.drop(columns=[target]), train_df[target]
         X_val, y_val = val_df.drop(columns=[target]), val_df[target]
 
         with tracker.start_run(run_name=f"{cfg.run_name}_optuna"):
             tuner = OptunaTuner(cfg, tracker=tracker, project_root=PROJECT_ROOT)
-            best_params = tuner.tune(X_train, y_train, X_val, y_val, tracker=tracker)
+            best_params = tuner.tune(X_train, y_train, X_val, y_val)
 
             logger.info(f"Тюнинг завершен. Лучшие параметры найдены: {best_params}")
             logger.info("Обучение финальной модели...")
@@ -126,7 +123,7 @@ def main(cfg: DictConfig):
     # ==========================================================
     elif mode == "evaluate":
         logger.info("Запуск оценки модели на тестовой выборке...")
-        _, _, test_df = loader.get_splits(df)
+        _, _, test_df = split_data(cfg, df)
 
         if test_df is None or test_df.empty:
             raise ValueError("Тестовая выборка пуста! Проверьте логику DataLoader.")

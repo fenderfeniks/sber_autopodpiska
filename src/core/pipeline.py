@@ -145,7 +145,8 @@ class MLPipeline:
             logger.info("Сохранение артефактов...")
 
             # Сохраняем конфиг в трекер
-            self.tracker.log_dict(OmegaConf.to_container(self.cfg, resolve=True), "config.json")
+            if active_tracker:
+                active_tracker.log_dict(OmegaConf.to_container(self.cfg, resolve=True), "config.json")
 
             # Подготавливаем папку
             models_dir = self.PROJECT_ROOT / self.cfg.paths.models_dir
@@ -164,21 +165,24 @@ class MLPipeline:
             with open(schema_path, "w") as f:
                 json.dump(feature_types, f, indent=4)
 
-            self.tracker.log_dict(feature_types, schema_name, "schemas")
+            if active_tracker:
+                active_tracker.log_dict(feature_types, schema_name, "schemas")
             logger.info(f"Схема фичей сохранена in {schema_path}")
 
             # 2. Сохраняем препроцессор (версия из data.tabular)
             prep_path = models_dir / f"preprocessing_v{prep_ver}.pkl"
             joblib.dump(self.preprocessor, prep_path)
-            self.tracker.log_artifact(str(prep_path), "preprocessing")
+            if active_tracker:
+                active_tracker.log_artifact(str(prep_path), "preprocessing")
 
             # 3. Сохраняем модель (версия из model)
             model_path = self.model.save() # Внутри обертки CatBoostWrapper подхватится модель_версия
-            self.tracker.log_artifact(model_path, "models")
+            if active_tracker:
+                active_tracker.log_artifact(model_path, "models")
 
             # 4. Логируем параметры из конфига
-            if hasattr(self.cfg.model, 'params'):
-                self.tracker.log_params(
+            if active_tracker and hasattr(self.cfg.model, 'params'):
+                active_tracker.log_params(
                     OmegaConf.to_container(self.cfg.model.params, resolve=True)
                 )
 
@@ -217,7 +221,7 @@ class MLPipeline:
 
         # 2. Инициализация архитектуры модели и загрузка весов по версии модели
         self.model = get_model(self.cfg, self.PROJECT_ROOT)
-        model_path = models_dir / f"{self.cfg.model.name}_v{model_ver}{self.model.file_extension}"
+        model_path = self.model.get_artifact_path(models_dir, model_ver)
         if not model_path.exists():
             raise FileNotFoundError(f"Модель не найдена: {model_path}")
             

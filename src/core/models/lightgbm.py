@@ -35,13 +35,10 @@ class LightGBMWrapper(BaseModelWrapper):
 
         self.ml_cfg = self.cfg.training.ml
         full_params = OmegaConf.to_container(self.model_cfg.params, resolve=True)
-
-        # Передаем метрику и лосс из корня конфигурации
         full_params['objective'] = self.cfg.loss_function
         if self.cfg.metrics:
             full_params['metric'] = list(self.cfg.metrics)
 
-        # Динамическое переключение архитектуры под задачу
         if self.task_type == 'regression':
             self.model = lgb.LGBMRegressor(**full_params)
         elif self.task_type in ['binary', 'multiclass']:
@@ -49,22 +46,46 @@ class LightGBMWrapper(BaseModelWrapper):
         else:
             raise ValueError(f"Неизвестный task_type для LightGBM: {self.task_type}")
 
+        self.cat_columns_ = None
+        self.cat_categories_ = {}
+    def _prepare_categorical(self, X: pd.DataFrame, fit: bool = False) -> pd.DataFrame:
+            X = X.copy()
+            cat_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+
+            if fit:
+                self.cat_columns_ = cat_cols
+                self.cat_categories_ = {
+                    col: sorted(X[col].astype(str).unique().tolist()) for col in cat_cols
+                }
+
+            if self.cat_columns_ is None:
+                raise RuntimeError("Модель ещё не обучена — категориальные колонки неизвестны.")
+
+            for col in self.cat_columns_:
+                if col in X.columns:
+                    # Категории, не встречавшиеся на train, станут NaN — LightGBM трактует их как missing
+                    X[col] = pd.Categorical(X[col].astype(str), categories=self.cat_categories_[col])
+
+            return X
+
     def fit(self, X_train: pd.DataFrame, y_train: pd.Series,
             X_val: Optional[pd.DataFrame] = None, y_val: Optional[pd.Series] = None,
-            tracker=None) -> None:  # <--- Добавлен tracker
+            tracker=None) -> None:
 
-        # ЛОГИРОВАНИЕ В TRACKER (Без прямого MLflow)
+        X_train = self._prepare_categorical(X_train, fit=True)
+        X_val_prepared = self._prepare_categorical(X_val) if X_val is not None else None
+
         if tracker:
             params_to_log = self.model.get_params()
             params_to_log.update({
                 "model_name": self.model_cfg.name,
-                "model_version": self.model_cfg.model_version
+                "model_version": self.model_cfg.model_version,
+                "cat_features_count": len(self.cat_columns_),
             })
             tracker.log_params(params_to_log)
 
-        eval_set = [(X_val, y_val)] if X_val is not None and y_val is not None else None
+        eval_set = [(X_val_prepared, y_val)] if X_val_prepared is not None and y_val is not None else None
 
-        # Настройка ранней остановки через коллбэки
         callbacks = []
         if eval_set and self.ml_cfg.early_stopping_rounds > 0:
             callbacks.append(lgb.early_stopping(stopping_rounds=self.ml_cfg.early_stopping_rounds, verbose=False))
@@ -75,33 +96,32 @@ class LightGBMWrapper(BaseModelWrapper):
         self.model.fit(
             X_train, y_train,
             eval_set=eval_set,
+            categorical_feature=self.cat_columns_ if self.cat_columns_ else 'auto',
             callbacks=callbacks
         )
 
-        # Логирование метрик валидации в МЕНЕДЖЕР
         if eval_set and hasattr(self.model, 'best_score_') and tracker:
             metrics_to_log = {f"best_val_{metric_name}": score for metric_name, score in
                               self.model.best_score_['valid_0'].items()}
             tracker.log_metrics(metrics_to_log)
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        X = self._prepare_categorical(X)
         return self.model.predict(X)
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         if hasattr(self.model, 'predict_proba'):
+            X = self._prepare_categorical(X)
             return self.model.predict_proba(X)
         raise NotImplementedError("predict_proba доступен только для задач классификации.")
 
     def save(self) -> str:
         """Сохранение Scikit-Learn интерфейса LightGBM через joblib."""
-        file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}.pkl"
-        save_path = self.PROJECT_ROOT / self.cfg.paths.models_dir / file_name
+        save_path = self.get_artifact_path(self.models_dir, self.model_version)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         joblib.dump(self.model, save_path)
         logger.info(f"Интерфейс LightGBM сохранен в {save_path}")
-
-        # УДАЛЕНА ЛОГИКА MLFLOW ОТСЮДА
 
         return str(save_path)
 

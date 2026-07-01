@@ -34,16 +34,18 @@ class PyTorchWrapper(BaseModelWrapper):
 
     def __init__(self, config: DictConfig, project_root, custom_nn: nn.Module = None):
         super().__init__(config, project_root)
-
         if not PYTORCH_INSTALLED: raise ImportError("PyTorch не установлен!")
+
         self.dl_cfg = self.cfg.training.dl
         self.device = torch.device(self.cfg.training.device if torch.cuda.is_available() else "cpu")
 
-        # ПУНКТ 1: Безопасная инициализация
+        self.cat_columns_ = None
+        self.cat_categories_ = {}
+        self.encoded_columns_ = None  # финальный набор колонок после One-Hot (фиксируется на fit)
+
         if custom_nn is None:
             logger.warning("Архитектура custom_nn не передана! Используется дефолтная линейная заглушка.")
             out_features = 1 if self.task_type == 'regression' else 2
-            # LazyLinear сам вычислит размер входа при первом батче
             self.model = nn.Sequential(
                 nn.LazyLinear(64),
                 nn.ReLU(),
@@ -52,17 +54,15 @@ class PyTorchWrapper(BaseModelWrapper):
         else:
             self.model = custom_nn.to(self.device)
 
-        # 2. Оптимизатор и Loss (можно парсить из конфига)
         opt_name = self.dl_cfg.optimizer.lower()
         if opt_name == "adamw":
             self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.dl_cfg.learning_rate)
         elif opt_name == "sgd":
             self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.dl_cfg.learning_rate,
-                                             momentum=self.dl_cfg.momentum)
+                                            momentum=self.dl_cfg.momentum)
         else:
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.dl_cfg.learning_rate)
 
-        # Зависит от глобальной задачи
         if self.task_type == 'regression':
             self.criterion = nn.MSELoss()
         else:
@@ -73,16 +73,39 @@ class PyTorchWrapper(BaseModelWrapper):
         self.best_val_score = float('inf') if direction == 'minimize' else float('-inf')
         self._direction = direction
 
+    def _encode_categorical(self, X: pd.DataFrame, fit: bool = False) -> pd.DataFrame:
+        """One-Hot энкодинг, зафиксированный на train. На inference гарантирует
+        идентичный набор колонок вне зависимости от того, какие категории реально встретились."""
+        X = X.copy()
+
+        if fit:
+            self.cat_columns_ = X.select_dtypes(include=['object', 'category']).columns.tolist()
+            self.cat_categories_ = {
+                col: sorted(X[col].astype(str).unique().tolist()) for col in self.cat_columns_
+            }
+
+        if self.cat_columns_ is None:
+            raise RuntimeError("Модель ещё не обучена — категориальные колонки неизвестны.")
+
+        for col in self.cat_columns_:
+            if col in X.columns:
+                X[col] = pd.Categorical(X[col].astype(str), categories=self.cat_categories_[col])
+
+        if self.cat_columns_:
+            X = pd.get_dummies(X, columns=self.cat_columns_, dummy_na=False)
+
+        if fit:
+            self.encoded_columns_ = X.columns.tolist()
+        else:
+            # Жёстко приводим набор колонок к тому, что был на train:
+            # новые категории (создавшие бы новые dummy-колонки) отбрасываются,
+            # отсутствующие на inference — заполняются нулями.
+            X = X.reindex(columns=self.encoded_columns_, fill_value=0)
+
+        return X
+
     def _prepare_dataloader(self, X: pd.DataFrame, y: pd.Series, shuffle: bool) -> DataLoader:
-        """Внутренний метод: конвертирует Pandas в PyTorch DataLoader"""
-
-        non_numeric_cols = X.select_dtypes(exclude=[np.number, bool]).columns
-        if len(non_numeric_cols) > 0:
-            raise TypeError(
-                f"PyTorchWrapper принимает только числа! Найдены строковые/объектные колонки: {non_numeric_cols.tolist()}. "
-                f"Используйте FeatureEngineer для их кодирования."
-            )
-
+        """Конвертирует уже полностью числовой DataFrame (после _encode_categorical) в DataLoader."""
         X_tensor = torch.tensor(X.astype(np.float32).values, dtype=torch.float32)
 
         if self.task_type == 'regression':
@@ -103,14 +126,21 @@ class PyTorchWrapper(BaseModelWrapper):
             X_val: pd.DataFrame = None, y_val: pd.Series = None,
             tracker=None) -> None:
 
+        X_train = self._encode_categorical(X_train, fit=True)
+        X_val_prepared = self._encode_categorical(X_val) if X_val is not None else None
+
         train_loader = self._prepare_dataloader(X_train, y_train, shuffle=True)
-        val_loader = self._prepare_dataloader(X_val, y_val, shuffle=False) if X_val is not None else None
+        val_loader = self._prepare_dataloader(X_val_prepared, y_val, shuffle=False) if X_val_prepared is not None else None
 
         epochs = self.dl_cfg.epochs
 
-        # ИСПРАВЛЕНО: Безопасное логирование параметров через внедренный tracker
         if tracker:
-            tracker.log_params({"epochs": epochs, "batch_size": self.dl_cfg.batch_size, "device": str(self.device)})
+            tracker.log_params({
+                "epochs": epochs,
+                "batch_size": self.dl_cfg.batch_size,
+                "device": str(self.device),
+                "cat_features_count": len(self.cat_columns_),
+            })
 
         logger.info(f"Старт обучения PyTorch. Девайс: {self.device}, Эпох: {epochs}")
 
@@ -118,7 +148,6 @@ class PyTorchWrapper(BaseModelWrapper):
             self.model.train()
             train_loss = 0.0
 
-            # ТРЕНИРОВОЧНЫЙ ЦИКЛ
             for X_batch, y_batch in train_loader:
                 X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
 
@@ -132,7 +161,6 @@ class PyTorchWrapper(BaseModelWrapper):
 
             train_loss /= len(train_loader.dataset)
 
-            # ВАЛИДАЦИЯ
             val_loss = 0.0
             if val_loader:
                 self.model.eval()
@@ -150,7 +178,6 @@ class PyTorchWrapper(BaseModelWrapper):
                     if val_loss > self.best_val_score:
                         self.best_val_score = val_loss
 
-            # ЛОГИРОВАНИЕ ЭПОХИ (Через независимый ArtifactManager)
             if tracker:
                 tracker.log_metrics({"train_loss": train_loss}, step=epoch)
                 if val_loader:
@@ -159,13 +186,12 @@ class PyTorchWrapper(BaseModelWrapper):
             logger.info(f"Epoch {epoch + 1}/{epochs} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Полноценный инференс для PyTorch"""
         self.model.eval()
-        X_tensor = torch.tensor(X.values, dtype=torch.float32).to(self.device)
+        X = self._encode_categorical(X)
+        X_tensor = torch.tensor(X.astype(np.float32).values, dtype=torch.float32).to(self.device)
 
         with torch.no_grad():
             outputs = self.model(X_tensor)
-
             if self.task_type == 'regression':
                 preds = outputs.squeeze(1)
             else:
@@ -174,12 +200,12 @@ class PyTorchWrapper(BaseModelWrapper):
         return preds.cpu().numpy()
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Возвращает вероятности классов (только для задач классификации)."""
         if self.task_type == 'regression':
             raise NotImplementedError("Метод predict_proba недоступен для задачи регрессии.")
 
         self.model.eval()
-        X_tensor = torch.tensor(X.values, dtype=torch.float32).to(self.device)
+        X = self._encode_categorical(X)
+        X_tensor = torch.tensor(X.astype(np.float32).values, dtype=torch.float32).to(self.device)
 
         with torch.no_grad():
             outputs = self.model(X_tensor)
@@ -189,14 +215,12 @@ class PyTorchWrapper(BaseModelWrapper):
 
     def save(self) -> str:
         """Нативное сохранение весов PyTorch модели (state_dict)."""
-        file_name = f"{self.model_cfg.name}_v{self.model_cfg.model_version}.pt"
-        save_path = self.PROJECT_ROOT / self.cfg.paths.models_dir / file_name
+        save_path = self.get_artifact_path(self.models_dir, self.model_version)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         if self.model is not None:
             torch.save(self.model.state_dict(), save_path)
             logger.info(f"Веса PyTorch модели сохранены в {save_path}")
-            # ИСПРАВЛЕНО: Убрали mlflow.log_artifact(str(save_path), artifact_path="models")
 
         return str(save_path)
 

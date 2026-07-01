@@ -230,9 +230,6 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         
         X_transformed = X.copy()
         
-        # ПРИМЕЧАНИЕ: Для грязного бейзлайна весь блок генерации закомментирован.
-        # Как только начнешь развивать пайплайн — просто раскомментируй код ниже.
-        
         # ==========================================================
         # 1. СИНХРОНИЗАЦИЯ ЗАГЛУШЕК
         # ==========================================================
@@ -276,31 +273,49 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         # ==========================================================
         if 'visit_date' in X_transformed.columns:
             date_series = pd.to_datetime(X_transformed['visit_date'], errors='coerce')
-            X_transformed['day_of_week'] = date_series.dt.dayofweek.fillna(0).astype(int)
-            X_transformed['is_weekend'] = X_transformed['day_of_week'].isin([5, 6]).astype(int)
+            day_of_week = date_series.dt.dayofweek
+        else:
+            logger.warning("[FEATURE ENGINEER] 'visit_date' отсутствует во входных данных — day_of_week/is_weekend будут заполнены дефолтом.")
+            day_of_week = pd.Series(np.nan, index=X_transformed.index)
+
+        X_transformed['day_of_week'] = day_of_week.fillna(0).astype(int)
+        X_transformed['is_weekend'] = X_transformed['day_of_week'].isin([5, 6]).astype(int)
 
         if 'visit_time' in X_transformed.columns:
             hours = pd.to_datetime(X_transformed['visit_time'], format='%H:%M:%S', errors='coerce').dt.hour
             if hours.isnull().all():
-                hours = pd.to_numeric(X_transformed['visit_time'], errors='coerce').fillna(12)
-            X_transformed['is_night'] = hours.isin([23, 0, 1, 2, 3, 4, 5]).astype(int)
+                hours = pd.to_numeric(X_transformed['visit_time'], errors='coerce')
+            hours = hours.fillna(12)
+        else:
+            logger.warning("[FEATURE ENGINEER] 'visit_time' отсутствует — is_night будет заполнен дефолтом.")
+            hours = pd.Series(12, index=X_transformed.index)
+
+        X_transformed['is_night'] = hours.isin([23, 0, 1, 2, 3, 4, 5]).astype(int)
         
         # ==========================================================
         # 5. МАТЕМАТИКА СКОРОСТИ КЛИКОВ И КРОССЫ
         # ==========================================================
         if 'last_hit_time_ms' in X_transformed.columns and 'first_hit_time_ms' in X_transformed.columns:
             X_transformed['session_duration_ms'] = X_transformed['last_hit_time_ms'] - X_transformed['first_hit_time_ms']
-            if 'total_hits_count' in X_transformed.columns:
-                X_transformed['ms_per_hit'] = np.where(
-                    X_transformed['total_hits_count'] > 0,
-                    X_transformed['session_duration_ms'] / X_transformed['total_hits_count'],
-                    0
-                )
+        else:
+            logger.warning("[FEATURE ENGINEER] 'last_hit_time_ms'/'first_hit_time_ms' отсутствуют — session_duration_ms = NaN.")
+            X_transformed['session_duration_ms'] = np.nan
+
+        if 'total_hits_count' in X_transformed.columns:
+            X_transformed['ms_per_hit'] = np.where(
+                X_transformed['total_hits_count'] > 0,
+                X_transformed['session_duration_ms'] / X_transformed['total_hits_count'],
+                0
+            )
+        else:
+            X_transformed['ms_per_hit'] = np.nan
 
         if 'device_category' in X_transformed.columns and 'device_brand' in X_transformed.columns:
             X_transformed['dev_category_brand'] = (
                 X_transformed['device_category'].astype(str) + "_" + X_transformed['device_brand'].astype(str)
             )
+        else:
+            X_transformed['dev_category_brand'] = 'Unknown_Unknown'
         
         # ==========================================================
         # 6. ВСТРОЕННОЕ ОБОГАЩЕНИЕ ДЕМОГРАФИЕЙ ГОРОДОВ
@@ -333,16 +348,22 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         
         return X_transformed
 
+    _ENGINEERED_COLUMNS = [
+        'screen_area', 'geo_zone', 'is_mobile_device',
+        'day_of_week', 'is_weekend', 'is_night',
+        'session_duration_ms', 'ms_per_hit', 'dev_category_brand',
+        'has_metro', 'city_population', 'city_avg_salary',
+        'city_cars_per_family', 'user_vs_city_car_interest',
+    ]
+
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
         """Динамически возвращает схему колонок на выходе трансформера."""
-        # Определяем базовый входящий поток фичей
         if input_features is not None:
             features = list(input_features)
         elif hasattr(self, 'feature_names_in_'):
             features = list(self.feature_names_in_)
         else:
             features = []
-        
-        # Поскольку для "грязного бейзлайна" код transform закомментирован,
-        # новые колонки физически не создаются. Возвращаем то, что вошло.
-        return np.array(features, dtype=object)
+
+        all_features = features + [c for c in self._ENGINEERED_COLUMNS if c not in features]
+        return np.array(all_features, dtype=object)
