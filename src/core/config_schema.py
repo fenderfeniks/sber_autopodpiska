@@ -62,6 +62,7 @@ class TabularDataConfig:
     aggrigation_changelog: str
 
     target_col: str
+    client_id_col: str
     drop_cols: List[str]
 
     num_fill_strategy: str

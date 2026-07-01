@@ -49,10 +49,16 @@ TRAIN_IMAGE = "sber_autopodpiska-train:latest"
 DOCKER_NETWORK = "deploy_ml_network"
 DOCKER_URL = "unix://var/run/docker.sock"
 
+HOST_PROJECT_ROOT = os.environ.get("HOST_PROJECT_ROOT")
+
 # Извлекаем переменные окружения, проброшенные в airflow-scheduler
-DB_USER = os.environ.get("DB_USER", "admin")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "admin")
-DB_NAME = os.environ.get("DB_NAME", "mlflow_db")
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_NAME = os.environ.get("DB_NAME")
+
+HOST_DB_USER = os.environ.get("HOST_DB_USER", "postgres")
+HOST_DB_PASSWORD = os.environ.get("HOST_DB_PASSWORD")
+HOST_DB_NAME = os.environ.get("HOST_DB_NAME", "sber_autopodpiska")
 
 default_args = {
     "owner": "ml-team",
@@ -83,15 +89,23 @@ def common_docker_kwargs(task_id: str) -> dict:
             # Train пишет сюда веса/препроцессор/feature_schema —
             # тот же volume, что смонтирован в сервис api.
             Mount(source="deploy_models_data", target="/app/models", type="volume"),
+            Mount(source=f"{HOST_PROJECT_ROOT}/configs", target="/app/configs", type="bind"),
+            Mount(
+                source=f"{HOST_PROJECT_ROOT}/data", 
+                target="/app/data", 
+                type="bind"
+            ),
         ],
         environment={
             "MLFLOW_TRACKING_URI": "http://mlflow:5000",
-            # Прокидываем переменные для oc.env резолвера в Hydra внутри train-контейнера
-            "POSTGRES_HOST": "postgres", # Имя сервиса БД в сети docker-compose
+            # Направляем DockerOperator на твой Windows-хост
+            "POSTGRES_HOST": "host.docker.internal", 
             "POSTGRES_PORT": "5432",
-            "POSTGRES_USER": DB_USER,
-            "POSTGRES_PASSWORD": DB_PASSWORD,
-            "POSTGRES_DB": DB_NAME,
+            
+            # Переменные подхватятся из Airflow Scheduler, куда их передал .env
+            "POSTGRES_DB": HOST_DB_NAME,
+            "POSTGRES_USER": HOST_DB_USER,
+            "POSTGRES_PASSWORD": HOST_DB_PASSWORD,
         },
     )
 
@@ -139,25 +153,18 @@ with DAG(
     tags=["ml", "deploy", "manual-only"],
 ) as deploy_dag:
 
-    # Модель уже лежит в volume models_data (её туда положил train-контейнер
-    # на предыдущем шаге retrain_pipeline) — она физически видна сервису api
-    # (тот же volume смонтирован в docker-compose.yml). Единственное, что
-    # нужно для "подхвата" новой версии — перечитать веса в FastAPI lifespan,
-    # а самый простой способ это сделать без правки кода api — перезапустить
-    # сам контейнер. Имя контейнера фиксировано через container_name: sber_api
-    # в docker-compose.yml, поэтому достаточно простого `docker restart` через
-    # проброшенный docker.sock — без docker compose CLI внутри airflow-образа.
-    #
-    # Если впоследствии добавишь POST /reload в FastAPI (читающий веса заново
-    # без даунтайма) — эту BashOperator-таску можно будет заменить на простой
-    # HTTP-запрос к api, без рестарта контейнера.
-    deploy_artifacts = BashOperator(
+    deploy_artifacts = DockerOperator(
         task_id="deploy_artifacts",
-        bash_command=(
-            "echo 'Перезапуск api для подхвата новой версии модели...' && "
-            "docker restart sber_api && "
-            "echo 'Деплой успешно завершен!'"
-        ),
+        image="docker:cli",  # Официальный мелкий образ, где есть команда docker
+        command="docker restart sber_api",
+        api_version="auto",
+        auto_remove="success",
+        # Используем ту же докер-сеть
+        network_mode="deploy_ml_network", 
+        # Пробрасываем сокет хоста прямо в этот мини-контейнер
+        mounts=[
+            Mount(source="/var/run/docker.sock", target="/var/run/docker.sock", type="bind")
+        ],
     )
 
     deploy_artifacts

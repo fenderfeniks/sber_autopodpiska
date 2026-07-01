@@ -21,6 +21,7 @@ tabular:
 
 
   target_col: "event_value"
+  client_id_col: "client_id"
   drop_cols: ["session_id", "client_id", "rn"]
   num_fill_strategy: "median"
   cat_fill_strategy: "mode"

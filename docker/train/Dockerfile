@@ -23,7 +23,7 @@ COPY configs/ configs/
 COPY main.py main.py
 COPY sql/ sql/
  
-RUN uv sync --no-dev --extra train
+RUN uv sync --no-dev --extra train --no-editable
  
 # Никакого CMD: это batch-образ. Команда (mode=train / mode=evaluate / ...)
 # подставляется DockerOperator'ом в Airflow. ENTRYPOINT фиксирует
